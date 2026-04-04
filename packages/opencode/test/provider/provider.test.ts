@@ -452,6 +452,118 @@ test("provider with baseURL from config", async () => {
   })
 })
 
+test("local openai-compatible provider discovers missing models from /v1/models", async () => {
+  using server = Bun.serve({
+    port: 0,
+    fetch(req) {
+      if (new URL(req.url).pathname !== "/v1/models") return new Response("not found", { status: 404 })
+      return Response.json({
+        data: [
+          { id: "gguf/afs/echo-v1.gguf" },
+          { id: "gguf/afs/memory-v1.gguf" },
+          { id: "gguf/afs/muse-v2.gguf" },
+        ],
+      })
+    },
+  })
+
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "opencode.json"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          provider: {
+            windows: {
+              name: "Windows",
+              npm: "@ai-sdk/openai-compatible",
+              env: [],
+              options: {
+                apiKey: "test-key",
+                baseURL: `${server.url.origin}/v1`,
+              },
+              models: {
+                "echo-v1": {
+                  id: "gguf/afs/echo-v1.gguf",
+                  name: "Echo v1",
+                  tool_call: true,
+                  limit: { context: 32768, output: 8192 },
+                },
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const providers = await Provider.list()
+      expect(providers["windows"]).toBeDefined()
+      expect(providers["windows"].models["echo-v1"]).toBeDefined()
+      expect(providers["windows"].models["gguf/afs/echo-v1.gguf"]).toBeUndefined()
+      expect(providers["windows"].models["gguf/afs/memory-v1.gguf"]).toBeDefined()
+      expect(providers["windows"].models["gguf/afs/muse-v2.gguf"]).toBeDefined()
+      expect(providers["windows"].models["gguf/afs/memory-v1.gguf"].api.url).toBe(`${server.url.origin}/v1`)
+    },
+  })
+})
+
+test("openai-compatible model discovery can be disabled per provider", async () => {
+  using server = Bun.serve({
+    port: 0,
+    fetch(req) {
+      if (new URL(req.url).pathname !== "/v1/models") return new Response("not found", { status: 404 })
+      return Response.json({
+        data: [{ id: "gguf/afs/hidden-v1.gguf" }],
+      })
+    },
+  })
+
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "opencode.json"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          provider: {
+            "custom-openai": {
+              name: "Custom OpenAI",
+              npm: "@ai-sdk/openai-compatible",
+              env: [],
+              options: {
+                apiKey: "test-key",
+                baseURL: `${server.url.origin}/v1`,
+                discoverModels: false,
+              },
+              models: {
+                "echo-v1": {
+                  id: "gguf/afs/echo-v1.gguf",
+                  name: "Echo v1",
+                  tool_call: true,
+                  limit: { context: 32768, output: 8192 },
+                },
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const providers = await Provider.list()
+      expect(providers["custom-openai"]).toBeDefined()
+      expect(providers["custom-openai"].models["echo-v1"]).toBeDefined()
+      expect(providers["custom-openai"].models["gguf/afs/hidden-v1.gguf"]).toBeUndefined()
+    },
+  })
+})
+
 test("model cost defaults to zero when not specified", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {

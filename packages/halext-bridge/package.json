@@ -1,0 +1,26 @@
+{
+  "name": "@halext/bridge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts",
+    "build": "bun build ./src/server.ts --outfile ./dist/server.js --target bun"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@tsconfig/bun": "1.0.9",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
+  "dependencies": {
+    "hono": "catalog:",
+    "zod": "catalog:"
+  }
+}

@@ -51,6 +51,22 @@ const DEFAULT_CHUNK_TIMEOUT = 300_000
 
 export namespace Provider {
   const log = Log.create({ service: "provider" })
+  const OPENAI_COMPATIBLE_NPM = "@ai-sdk/openai-compatible"
+  const DISCOVERED_MODEL_DEFAULT_CONTEXT = 32_768
+  const DISCOVERED_MODEL_DEFAULT_OUTPUT = 8_192
+  const DISCOVER_MODELS_TIMEOUT_MS = 3_000
+
+  type ConfigProvider = NonNullable<Config.Info["provider"]>[string]
+
+  const OpenAICompatibleModelsResponse = z.object({
+    data: z.array(
+      z
+        .object({
+          id: z.string(),
+        })
+        .passthrough(),
+    ),
+  })
 
   function shouldUseCopilotResponsesApi(modelID: string): boolean {
     const match = /^gpt-(\d+)/.exec(modelID)
@@ -104,6 +120,200 @@ export namespace Provider {
       status: res.status,
       statusText: res.statusText,
     })
+  }
+
+  function getProviderPackage(provider: Info, configProvider?: ConfigProvider) {
+    if (typeof configProvider?.npm === "string" && configProvider.npm) return configProvider.npm
+    const firstModel = Object.values(provider.models)[0]
+    if (firstModel?.api.npm) return firstModel.api.npm
+    return undefined
+  }
+
+  function getProviderBaseURL(provider: Info, configProvider?: ConfigProvider) {
+    const optionsURL =
+      typeof provider.options?.baseURL === "string" && provider.options.baseURL.trim() !== ""
+        ? provider.options.baseURL.trim()
+        : undefined
+    if (optionsURL) return optionsURL
+
+    const configURL =
+      typeof configProvider?.api === "string" && configProvider.api.trim() !== "" ? configProvider.api.trim() : undefined
+    if (configURL) return configURL
+
+    const modelURL = Object.values(provider.models)
+      .map((model) => model.api.url)
+      .find((value): value is string => typeof value === "string" && value.trim() !== "")
+    if (modelURL) return modelURL.trim()
+
+    return undefined
+  }
+
+  function isPrivateHostname(hostname: string) {
+    const value = hostname.trim().toLowerCase()
+    if (!value) return false
+    if (value === "localhost" || value === "0.0.0.0" || value === "::1" || value.endsWith(".local")) return true
+
+    const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(value)
+    if (!match) return false
+
+    const octets = match.slice(1).map(Number)
+    if (octets.some((octet) => Number.isNaN(octet) || octet < 0 || octet > 255)) return false
+
+    const [first, second] = octets
+    if (first === 10 || first === 127) return true
+    if (first === 169 && second === 254) return true
+    if (first === 192 && second === 168) return true
+    if (first === 172 && second >= 16 && second <= 31) return true
+    return false
+  }
+
+  function shouldDiscoverOpenAICompatibleModels(provider: Info, configProvider?: ConfigProvider) {
+    const npm = getProviderPackage(provider, configProvider)
+    if (npm !== OPENAI_COMPATIBLE_NPM) return false
+
+    const discoverModels = provider.options?.discoverModels ?? configProvider?.options?.discoverModels
+    if (discoverModels === false) return false
+
+    const baseURL = getProviderBaseURL(provider, configProvider)
+    if (!baseURL) return false
+
+    let parsed: URL
+    try {
+      parsed = new URL(baseURL)
+    } catch {
+      return false
+    }
+
+    if (discoverModels === true) return true
+    return isPrivateHostname(parsed.hostname)
+  }
+
+  function getDiscoverModelsTimeout(provider: Info, configProvider?: ConfigProvider) {
+    const value = provider.options?.discoverModelsTimeout ?? configProvider?.options?.discoverModelsTimeout
+    return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : DISCOVER_MODELS_TIMEOUT_MS
+  }
+
+  function discoveredModel(providerID: ProviderID, modelID: string, baseURL: string): Model {
+    const model: Model = {
+      id: ModelID.make(modelID),
+      providerID,
+      name: modelID,
+      family: "",
+      api: {
+        id: modelID,
+        npm: OPENAI_COMPATIBLE_NPM,
+        url: baseURL,
+      },
+      status: "active",
+      headers: {},
+      options: {},
+      cost: {
+        input: 0,
+        output: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+      limit: {
+        context: DISCOVERED_MODEL_DEFAULT_CONTEXT,
+        output: DISCOVERED_MODEL_DEFAULT_OUTPUT,
+      },
+      capabilities: {
+        temperature: true,
+        reasoning: false,
+        attachment: false,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+        output: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+        interleaved: false,
+      },
+      release_date: "",
+      variants: {},
+    }
+
+    model.variants = mapValues(ProviderTransform.variants(model), (variant) => variant)
+    return model
+  }
+
+  async function discoverOpenAICompatibleModels(provider: Info, configProvider?: ConfigProvider) {
+    if (!shouldDiscoverOpenAICompatibleModels(provider, configProvider)) return
+
+    const baseURL = getProviderBaseURL(provider, configProvider)
+    if (!baseURL) return
+
+    let endpoint: string
+    try {
+      endpoint = new URL("models", baseURL.endsWith("/") ? baseURL : `${baseURL}/`).toString()
+    } catch {
+      return
+    }
+
+    const headers = new Headers()
+    const customHeaders = provider.options?.headers
+    if (customHeaders && typeof customHeaders === "object") {
+      for (const [key, value] of Object.entries(customHeaders)) {
+        if (typeof value === "string" && key) headers.set(key, value)
+      }
+    }
+
+    const apiKey =
+      (typeof provider.key === "string" && provider.key) ||
+      (typeof provider.options?.apiKey === "string" && provider.options.apiKey) ||
+      undefined
+    if (apiKey && !headers.has("authorization")) headers.set("authorization", `Bearer ${apiKey}`)
+
+    try {
+      const response = await fetch(endpoint, {
+        headers,
+        signal: AbortSignal.timeout(getDiscoverModelsTimeout(provider, configProvider)),
+      })
+      if (!response.ok) {
+        log.debug("openai-compatible model discovery failed", {
+          providerID: provider.id,
+          endpoint,
+          status: response.status,
+        })
+        return
+      }
+
+      const payload = OpenAICompatibleModelsResponse.parse(await response.json())
+      const represented = new Set(Object.values(provider.models).map((model) => model.api.id))
+
+      let added = 0
+      for (const item of payload.data) {
+        if (represented.has(item.id)) continue
+        provider.models[item.id] = discoveredModel(ProviderID.make(provider.id), item.id, baseURL)
+        represented.add(item.id)
+        added += 1
+      }
+
+      if (added > 0) {
+        log.info("discovered openai-compatible models", {
+          providerID: provider.id,
+          count: added,
+          endpoint,
+        })
+      }
+    } catch (error) {
+      log.debug("openai-compatible model discovery skipped", {
+        providerID: provider.id,
+        endpoint,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   const BUNDLED_PROVIDERS: Record<string, (options: any) => SDK> = {
@@ -1071,6 +1281,10 @@ export namespace Provider {
       if (provider.name) partial.name = provider.name
       if (provider.options) partial.options = provider.options
       mergeProvider(providerID, partial)
+    }
+
+    for (const [id, provider] of Object.entries(providers)) {
+      await discoverOpenAICompatibleModels(provider, config.provider?.[id])
     }
 
     for (const [id, provider] of Object.entries(providers)) {

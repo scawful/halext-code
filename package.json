@@ -8,7 +8,13 @@
   "scripts": {
     "dev": "bun run --cwd packages/opencode --conditions=browser src/index.ts",
     "dev:desktop": "bun --cwd packages/desktop tauri dev",
+    "dev:bridge": "bun --cwd packages/halext-bridge dev",
+    "dev:halext-tui": "bun --cwd packages/halext-tui dev",
+    "hcode": "./scripts/hcode",
+    "halext-tui": "./scripts/halext-tui",
+    "smoke:afs": "./scripts/afs-hcode-smoke",
     "dev:web": "bun --cwd packages/app dev",
+    "dev:workbench": "bun --cwd packages/halext-workbench dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",
     "typecheck": "bun turbo typecheck",
     "prepare": "husky",

@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+dir="$ROOT"
+live="${HCODE_SMOKE_LIVE:-0}"
+
+if [[ "${1:-}" == "--live-run" ]]; then
+  live="1"
+  shift
+fi
+
+if [[ $# -gt 0 ]]; then
+  dir="$1"
+fi
+
+run() {
+  HALEXT_DIRECTORY="$dir" "$ROOT/scripts/hcode" "$@"
+}
+
+grab() {
+  local out
+  if ! out="$(run "$@" 2>&1)"; then
+    printf '%s\n' "$out" >&2
+    return 1
+  fi
+  printf '%s' "$out"
+}
+
+json_get() {
+  local key="$1"
+  local raw="$2"
+  bun -e 'const d = JSON.parse(process.argv[1]); const k = process.argv[2].split("."); let x = d; for (const p of k) x = x?.[p]; if (x === undefined || x === null) process.exit(1); process.stdout.write(String(x))' "$raw" "$key"
+}
+
+say() {
+  printf '%s\n' "$*" >&2
+}
+
+say "smoke: checking repo-local AFS status hook"
+status="$(grab debug agent build --tool afs_local_context_status --params '{}')"
+ctx="$(json_get result.structuredContent.context_path "$status")"
+if [[ "$ctx" != "$dir/.context" ]]; then
+  echo "expected context_path $dir/.context, got $ctx" >&2
+  exit 1
+fi
+
+say "smoke: checking repo-local context file-path normalization"
+list="$(grab debug agent build --tool afs_local_context_list --params '{"path":"scratchpad","max_depth":1}')"
+list_path="$(json_get result.structuredContent.path "$list")"
+if [[ "$list_path" != "$dir/.context/scratchpad" ]]; then
+  echo "expected normalized scratchpad path, got $list_path" >&2
+  exit 1
+fi
+
+say "smoke: creating and reading a handoff packet"
+create="$(grab debug agent build --tool afs_local_handoff_create --params '{"accomplished":["provider-free smoke"],"next_steps":["none"],"metadata":{"source":"afs-hcode-smoke"}}')"
+sid="$(json_get result.structuredContent.session_id "$create")"
+agent="$(json_get result.structuredContent.agent_name "$create")"
+if [[ "$agent" != "hcode" ]]; then
+  echo "expected default handoff agent_name hcode, got $agent" >&2
+  exit 1
+fi
+
+read="$(grab debug agent build --tool afs_local_handoff_read --params "{\"session_id\":\"$sid\"}")"
+read_sid="$(json_get result.structuredContent.session_id "$read")"
+if [[ "$read_sid" != "$sid" ]]; then
+  echo "expected handoff read to return $sid, got $read_sid" >&2
+  exit 1
+fi
+
+if [[ "$live" == "1" ]]; then
+  say "smoke: running live slash-command path"
+  run run "/afs-brief" >/dev/null
+  run run "/afs-status" >/dev/null
+fi
+
+say "smoke: passed for $dir"

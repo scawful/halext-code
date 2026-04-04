@@ -1,8 +1,10 @@
 import { createMemo, createSignal, For } from "solid-js"
 import { DEFAULT_THEMES, useTheme } from "@tui/context/theme"
+import { App } from "@/cli/name"
 
 const themeCount = Object.keys(DEFAULT_THEMES).length
 const themeTip = `Use {highlight}/themes{/highlight} or {highlight}Ctrl+X T{/highlight} to switch between ${themeCount} built-in themes`
+const cli = App.name()
 
 type TipPart = { text: string; highlight: boolean }
 
@@ -105,17 +107,17 @@ const TIPS = [
   "Add {highlight}.ts{/highlight} files to {highlight}.opencode/plugin/{/highlight} for event hooks",
   "Use plugins to send OS notifications when sessions complete",
   "Create a plugin to prevent OpenCode from reading sensitive files",
-  "Use {highlight}opencode run{/highlight} for non-interactive scripting",
-  "Use {highlight}opencode --continue{/highlight} to resume the last session",
-  "Use {highlight}opencode run -f file.ts{/highlight} to attach files via CLI",
+  `Use {highlight}${cli} run{/highlight} for non-interactive scripting`,
+  `Use {highlight}${cli} --continue{/highlight} to resume the last session`,
+  `Use {highlight}${cli} run -f file.ts{/highlight} to attach files via CLI`,
   "Use {highlight}--format json{/highlight} for machine-readable output in scripts",
-  "Run {highlight}opencode serve{/highlight} for headless API access to OpenCode",
-  "Use {highlight}opencode run --attach{/highlight} to connect to a running server",
-  "Run {highlight}opencode upgrade{/highlight} to update to the latest version",
-  "Run {highlight}opencode auth list{/highlight} to see all configured providers",
-  "Run {highlight}opencode agent create{/highlight} for guided agent creation",
+  `Run {highlight}${cli} serve{/highlight} for headless API access to OpenCode`,
+  `Use {highlight}${cli} run --attach{/highlight} to connect to a running server`,
+  `Run {highlight}${cli} upgrade{/highlight} to update to the latest version`,
+  `Run {highlight}${cli} auth list{/highlight} to see all configured providers`,
+  `Run {highlight}${cli} agent create{/highlight} for guided agent creation`,
   "Use {highlight}/opencode{/highlight} in GitHub issues/PRs to trigger AI actions",
-  "Run {highlight}opencode github install{/highlight} to set up the GitHub workflow",
+  `Run {highlight}${cli} github install{/highlight} to set up the GitHub workflow`,
   "Comment {highlight}/opencode fix this{/highlight} on issues to auto-create PRs",
   "Comment {highlight}/oc{/highlight} on PR code lines for targeted code reviews",
   'Use {highlight}"theme": "system"{/highlight} to match your terminal\'s colors',
@@ -135,7 +137,7 @@ const TIPS = [
   "Run {highlight}/unshare{/highlight} to remove a session from public access",
   "Permission {highlight}doom_loop{/highlight} prevents infinite tool call loops",
   "Permission {highlight}external_directory{/highlight} protects files outside project",
-  "Run {highlight}opencode debug config{/highlight} to troubleshoot configuration",
+  `Run {highlight}${cli} debug config{/highlight} to troubleshoot configuration`,
   "Use {highlight}--print-logs{/highlight} flag to see detailed logs in stderr",
   "Press {highlight}Ctrl+X G{/highlight} or {highlight}/timeline{/highlight} to jump to specific messages",
   "Press {highlight}Ctrl+X H{/highlight} to toggle code block visibility in messages",

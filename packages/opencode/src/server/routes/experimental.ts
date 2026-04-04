@@ -35,7 +35,9 @@ export const ExperimentalRoutes = lazy(() =>
         },
       }),
       async (c) => {
-        return c.json(await ToolRegistry.ids())
+        const builtin = await ToolRegistry.ids()
+        const mcp = Object.keys(await MCP.tools())
+        return c.json([...new Set([...builtin, ...mcp])].sort())
       },
     )
     .get(
@@ -78,14 +80,22 @@ export const ExperimentalRoutes = lazy(() =>
       ),
       async (c) => {
         const { provider, model } = c.req.valid("query")
-        const tools = await ToolRegistry.tools({ providerID: ProviderID.make(provider), modelID: ModelID.make(model) })
+        const builtin = await ToolRegistry.tools({ providerID: ProviderID.make(provider), modelID: ModelID.make(model) })
+        const mcp = Object.entries(await MCP.tools()).map(([id, tool]) => ({
+          id,
+          description: tool.description ?? "",
+          parameters: (tool as any).inputSchema?.jsonSchema ?? (tool as any).inputSchema ?? {},
+        }))
         return c.json(
-          tools.map((t) => ({
-            id: t.id,
-            description: t.description,
-            // Handle both Zod schemas and plain JSON schemas
-            parameters: (t.parameters as any)?._def ? zodToJsonSchema(t.parameters as any) : t.parameters,
-          })),
+          [
+            ...builtin.map((t) => ({
+              id: t.id,
+              description: t.description,
+              // Handle both Zod schemas and plain JSON schemas
+              parameters: (t.parameters as any)?._def ? zodToJsonSchema(t.parameters as any) : t.parameters,
+            })),
+            ...mcp,
+          ],
         )
       },
     )

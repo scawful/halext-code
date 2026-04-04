@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+project_dir="${HALEXT_DIRECTORY:-$PWD}"
+
+cd "$project_dir"
+
+export HALEXT_DIRECTORY="$project_dir"
+export OPENCODE_ENABLE_EXA="${OPENCODE_ENABLE_EXA:-1}"
+
+exec bun --cwd "$ROOT/packages/opencode" --conditions=browser src/hcode.ts "$@"

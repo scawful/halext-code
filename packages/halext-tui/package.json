@@ -1,0 +1,29 @@
+{
+  "name": "@halext/tui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/app.tsx",
+    "./cli": "./src/index.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev": "bun src/index.tsx",
+    "start": "bun src/index.tsx",
+    "build": "bun run ./build.ts"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@tsconfig/bun": "1.0.9",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
+  "dependencies": {
+    "@halext/bridge": "workspace:*",
+    "@opencode-ai/sdk": "workspace:*",
+    "@opentui/core": "0.1.87",
+    "@opentui/solid": "0.1.87",
+    "solid-js": "catalog:"
+  }
+}

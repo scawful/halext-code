@@ -1,5 +1,4 @@
 import { EOL } from "os"
-import { basename } from "path"
 import { Agent } from "../../../agent/agent"
 import { Provider } from "../../../provider/provider"
 import { Session } from "../../../session"
@@ -11,6 +10,46 @@ import { PermissionNext } from "../../../permission/next"
 import { iife } from "../../../util/iife"
 import { bootstrap } from "../../bootstrap"
 import { cmd } from "../cmd"
+import { MCP } from "../../../mcp"
+import { Plugin } from "../../../plugin"
+import { App } from "../../name"
+
+type DebugTool = {
+  id: string
+  description: string
+  parameters: unknown
+  execute: (params: Record<string, unknown>, ctx: Awaited<ReturnType<typeof createToolContext>>) => Promise<unknown>
+}
+
+async function runToolWithHooks(
+  toolID: string,
+  args: Record<string, unknown>,
+  ctx: Awaited<ReturnType<typeof createToolContext>>,
+  execute: (args: Record<string, unknown>) => Promise<unknown>,
+) {
+  const payload = { args }
+  await Plugin.trigger(
+    "tool.execute.before",
+    {
+      tool: toolID,
+      sessionID: ctx.sessionID,
+      callID: ctx.callID,
+    },
+    payload,
+  )
+  const result = await execute(payload.args as Record<string, unknown>)
+  await Plugin.trigger(
+    "tool.execute.after",
+    {
+      tool: toolID,
+      sessionID: ctx.sessionID,
+      callID: ctx.callID,
+      args: payload.args as Record<string, unknown>,
+    },
+    result as any,
+  )
+  return result
+}
 
 export const AgentCommand = cmd({
   command: "agent <name>",
@@ -35,9 +74,7 @@ export const AgentCommand = cmd({
       const agentName = args.name as string
       const agent = await Agent.get(agentName)
       if (!agent) {
-        process.stderr.write(
-          `Agent ${agentName} not found, run '${basename(process.execPath)} agent list' to get an agent list` + EOL,
-        )
+        process.stderr.write(`Agent ${agentName} not found, run '${App.cmd("agent list")}' to get an agent list` + EOL)
         process.exit(1)
       }
       const availableTools = await getAvailableTools(agent)
@@ -71,7 +108,38 @@ export const AgentCommand = cmd({
 
 async function getAvailableTools(agent: Agent.Info) {
   const model = agent.model ?? (await Provider.defaultModel())
-  return ToolRegistry.tools(model, agent)
+  const builtin = await ToolRegistry.tools(model, agent)
+  const mcp = Object.entries(await MCP.tools())
+    .filter(([, tool]) => typeof tool.execute === "function")
+    .map(
+      ([id, tool]) =>
+        ({
+          id,
+          description: tool.description ?? "",
+          parameters: (tool as any).inputSchema?.jsonSchema ?? (tool as any).inputSchema ?? {},
+          execute: (params, ctx) =>
+            runToolWithHooks(id, params, ctx, (args) =>
+              tool.execute!(args, {
+                abortSignal: ctx.abort,
+                toolCallId: ctx.callID,
+                messages: [],
+              }),
+            ),
+        }) satisfies DebugTool,
+    )
+
+  return [
+    ...builtin.map(
+      (tool) =>
+        ({
+          id: tool.id,
+          description: tool.description,
+          parameters: tool.parameters,
+          execute: (params, ctx) => runToolWithHooks(tool.id, params, ctx, (args) => tool.execute(args, ctx)),
+        }) satisfies DebugTool,
+    ),
+    ...mcp,
+  ]
 }
 
 async function resolveTools(agent: Agent.Info, availableTools: Awaited<ReturnType<typeof getAvailableTools>>) {

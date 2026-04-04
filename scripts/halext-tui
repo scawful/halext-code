@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+DEFAULT_SERVER_URL="http://127.0.0.1:4096"
+DEFAULT_BRIDGE_URL="http://127.0.0.1:4319"
+
+server_url="${OPENCODE_SERVER_URL:-$DEFAULT_SERVER_URL}"
+bridge_url="${HALEXT_BRIDGE_URL:-$DEFAULT_BRIDGE_URL}"
+default_directory="${HALEXT_DIRECTORY:-$PWD}"
+
+started_server_pid=""
+started_bridge_pid=""
+server_log=""
+bridge_log=""
+passthrough_args=()
+has_directory_flag=0
+has_help_flag=0
+
+cleanup() {
+  local exit_code=$?
+  if [[ -n "$started_server_pid" ]]; then
+    kill "$started_server_pid" >/dev/null 2>&1 || true
+    wait "$started_server_pid" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$started_bridge_pid" ]]; then
+    kill "$started_bridge_pid" >/dev/null 2>&1 || true
+    wait "$started_bridge_pid" >/dev/null 2>&1 || true
+  fi
+  exit "$exit_code"
+}
+
+trap cleanup EXIT INT TERM
+
+while (($#)); do
+  case "$1" in
+    --server)
+      server_url="${2:?missing value for --server}"
+      passthrough_args+=("$1" "$2")
+      shift 2
+      ;;
+    --bridge)
+      bridge_url="${2:?missing value for --bridge}"
+      passthrough_args+=("$1" "$2")
+      shift 2
+      ;;
+    --directory)
+      has_directory_flag=1
+      passthrough_args+=("$1" "${2:?missing value for --directory}")
+      shift 2
+      ;;
+    --help|-h)
+      has_help_flag=1
+      passthrough_args+=("$1")
+      shift
+      ;;
+    *)
+      passthrough_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ "$has_directory_flag" -eq 0 ]]; then
+  passthrough_args+=(--directory "$default_directory")
+fi
+
+if [[ "$has_help_flag" -eq 1 ]]; then
+  cd "$ROOT"
+  exec bun --cwd packages/halext-tui src/index.tsx "${passthrough_args[@]}"
+fi
+
+wait_for_http() {
+  local url="$1"
+  local label="$2"
+  local log_file="${3:-}"
+  local attempts="${4:-80}"
+
+  for ((attempt = 0; attempt < attempts; attempt += 1)); do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  echo "$label did not become ready: $url" >&2
+  if [[ -n "$log_file" ]]; then
+    echo "log: $log_file" >&2
+  fi
+  return 1
+}
+
+ensure_server() {
+  if curl -fsS "$server_url/global/health" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ "$server_url" != "$DEFAULT_SERVER_URL" ]]; then
+    echo "No opencode server is reachable at $server_url." >&2
+    echo "Start that server manually or use the default $DEFAULT_SERVER_URL." >&2
+    exit 1
+  fi
+
+  server_log="$(mktemp -t halext-tui-opencode.XXXXXX.log)"
+  (
+    cd "$ROOT"
+    bun --cwd packages/opencode --conditions=browser src/index.ts serve --port 4096 >"$server_log" 2>&1
+  ) &
+  started_server_pid=$!
+  wait_for_http "$server_url/global/health" "opencode server" "$server_log"
+}
+
+ensure_bridge() {
+  if curl -fsS "$bridge_url/health" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ "$bridge_url" != "$DEFAULT_BRIDGE_URL" ]]; then
+    echo "No halext bridge is reachable at $bridge_url." >&2
+    echo "Start that bridge manually or use the default $DEFAULT_BRIDGE_URL." >&2
+    exit 1
+  fi
+
+  bridge_log="$(mktemp -t halext-tui-bridge.XXXXXX.log)"
+  (
+    cd "$ROOT"
+    HALEXT_BRIDGE_PORT=4319 bun --cwd packages/halext-bridge src/server.ts >"$bridge_log" 2>&1
+  ) &
+  started_bridge_pid=$!
+  wait_for_http "$bridge_url/health" "halext bridge" "$bridge_log"
+}
+
+ensure_server
+ensure_bridge
+
+cd "$ROOT"
+exec bun --cwd packages/halext-tui src/index.tsx --server "$server_url" --bridge "$bridge_url" "${passthrough_args[@]}"
