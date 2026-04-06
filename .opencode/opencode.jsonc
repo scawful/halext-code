@@ -6,11 +6,25 @@
     "opencode": {
       "options": {},
     },
+    // LM Studio on MacBook M5 - dynamically discovers available models
+    // Models are served at http://localhost:1234/v1
     "lmstudio": {
+      "api": "http://localhost:1234/v1",
       "options": {
         "discoverModels": true,
         "discoverModelsTimeout": 8000,
       },
+      // Whitelist only models that are actually useful for coding tasks
+      // Excludes embedding models and experimental/broken models
+      "whitelist": [
+        "gguf/zelda/nayru-v9-q8_0.gguf",
+        "gguf/zelda/farore-7b-v5-q8.gguf",
+        "gguf/zelda/din-7b-v4-q4km.gguf",
+        "gguf/zelda/veran-7b-v4-q8.gguf",
+        "gguf/zelda/majora-7b-v2-q8.gguf",
+        "gguf/scawful/scawful-echo-qwen25-7b-v4-q4km.gguf",
+        "gguf/ollama/qwen2.5-coder-7b.gguf",
+      ],
     },
     "windows": {
       "options": {
@@ -29,14 +43,38 @@
       "*": "allow",
     },
     "afs_local_*": "allow",
+    "sequential_thinking_*": "allow",
+    "yaze_*": "allow",
     "websearch": "allow",
     "webfetch": "allow",
   },
   "mcp": {
+    // Agentic File System for context management, scratchpad, memory
     "afs_local": {
       "type": "local",
       "command": ["/Users/scawful/src/lab/afs/scripts/afs", "mcp", "serve"],
       "enabled": true,
+      "timeout": 30000,
+    },
+    // Sequential thinking for complex multi-step reasoning
+    "sequential_thinking": {
+      "type": "local",
+      "command": ["node", "/Users/scawful/src/tools/mcp-servers/src/sequentialthinking/dist/index.js"],
+      "enabled": true,
+      "timeout": 60000,
+    },
+    // Yaze MCP for SNES/Z80 emulation debugging (requires running YAZE emulator with gRPC)
+    "yaze": {
+      "type": "local",
+      "command": [
+        "/Users/scawful/src/tools/yaze-mcp/venv/bin/python",
+        "/Users/scawful/src/tools/yaze-mcp/server.py"
+      ],
+      "environment": {
+        "PYTHONPATH": "/Users/scawful/src/tools/yaze-mcp",
+        "YAZE_GRPC_TARGET": "127.0.0.1:50052",
+      },
+      "enabled": false,
       "timeout": 30000,
     },
   },

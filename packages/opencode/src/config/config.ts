@@ -38,6 +38,7 @@ import { ConfigPaths } from "./paths"
 import { Filesystem } from "@/util/filesystem"
 import { Process } from "@/util/process"
 import { Lock } from "@/util/lock"
+import { App } from "@/cli/name"
 
 export namespace Config {
   const ModelId = z.string().meta({ $ref: "https://models.dev/model-schema.json#/$defs/Model" })
@@ -962,7 +963,7 @@ export namespace Config {
       port: z.number().int().positive().optional().describe("Port to listen on"),
       hostname: z.string().optional().describe("Hostname to listen on"),
       mdns: z.boolean().optional().describe("Enable mDNS service discovery"),
-      mdnsDomain: z.string().optional().describe("Custom domain name for mDNS service (default: opencode.local)"),
+      mdnsDomain: z.string().optional().describe(`Custom domain name for mDNS service (default: ${App.mdnsDomain()})`),
       cors: z.array(z.string()).optional().describe("Additional domains to allow for CORS"),
     })
     .strict()

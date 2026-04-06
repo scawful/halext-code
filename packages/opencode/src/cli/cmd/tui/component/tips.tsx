@@ -5,6 +5,7 @@ import { App } from "@/cli/name"
 const themeCount = Object.keys(DEFAULT_THEMES).length
 const themeTip = `Use {highlight}/themes{/highlight} or {highlight}Ctrl+X T{/highlight} to switch between ${themeCount} built-in themes`
 const cli = App.name()
+const title = App.title()
 
 type TipPart = { text: string; highlight: boolean }
 
@@ -53,7 +54,7 @@ export function Tips() {
 const TIPS = [
   "Type {highlight}@{/highlight} followed by a filename to fuzzy search and attach files",
   "Start a message with {highlight}!{/highlight} to run shell commands directly (e.g., {highlight}!ls -la{/highlight})",
-  "Press {highlight}Tab{/highlight} to cycle between Build and Plan agents",
+  "Press {highlight}Tab{/highlight} to cycle through primary agents",
   "Use {highlight}/undo{/highlight} to revert the last message and file changes",
   "Use {highlight}/redo{/highlight} to restore previously undone messages and file changes",
   "Run {highlight}/share{/highlight} to create a public link to your conversation at opencode.ai",
@@ -89,7 +90,7 @@ const TIPS = [
   "Override any keybind in {highlight}tui.json{/highlight} via the {highlight}keybinds{/highlight} section",
   "Set any keybind to {highlight}none{/highlight} to disable it completely",
   "Configure local or remote MCP servers in the {highlight}mcp{/highlight} config section",
-  "OpenCode auto-handles OAuth for remote MCP servers requiring auth",
+  `${title} auto-handles OAuth for remote MCP servers requiring auth`,
   "Add {highlight}.md{/highlight} files to {highlight}.opencode/command/{/highlight} to define reusable custom prompts",
   "Use {highlight}$ARGUMENTS{/highlight}, {highlight}$1{/highlight}, {highlight}$2{/highlight} in custom commands for dynamic input",
   "Use backticks in commands to inject shell output (e.g., {highlight}`git status`{/highlight})",
@@ -98,20 +99,20 @@ const TIPS = [
   'Use patterns like {highlight}"git *": "allow"{/highlight} for granular bash permissions',
   'Set {highlight}"rm -rf *": "deny"{/highlight} to block destructive commands',
   'Configure {highlight}"git push": "ask"{/highlight} to require approval before pushing',
-  "OpenCode auto-formats files using prettier, gofmt, ruff, and more",
+  `${title} auto-formats files using prettier, gofmt, ruff, and more`,
   'Set {highlight}"formatter": false{/highlight} in config to disable all auto-formatting',
   "Define custom formatter commands with file extensions in config",
-  "OpenCode uses LSP servers for intelligent code analysis",
+  `${title} uses LSP servers for intelligent code analysis`,
   "Create {highlight}.ts{/highlight} files in {highlight}.opencode/tools/{/highlight} to define new LLM tools",
   "Tool definitions can invoke scripts written in Python, Go, etc",
   "Add {highlight}.ts{/highlight} files to {highlight}.opencode/plugin/{/highlight} for event hooks",
   "Use plugins to send OS notifications when sessions complete",
-  "Create a plugin to prevent OpenCode from reading sensitive files",
+  `Create a plugin to prevent ${title} from reading sensitive files`,
   `Use {highlight}${cli} run{/highlight} for non-interactive scripting`,
   `Use {highlight}${cli} --continue{/highlight} to resume the last session`,
   `Use {highlight}${cli} run -f file.ts{/highlight} to attach files via CLI`,
   "Use {highlight}--format json{/highlight} for machine-readable output in scripts",
-  `Run {highlight}${cli} serve{/highlight} for headless API access to OpenCode`,
+  `Run {highlight}${cli} serve{/highlight} for headless API access to ${title}`,
   `Use {highlight}${cli} run --attach{/highlight} to connect to a running server`,
   `Run {highlight}${cli} upgrade{/highlight} to update to the latest version`,
   `Run {highlight}${cli} auth list{/highlight} to see all configured providers`,

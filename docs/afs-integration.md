@@ -52,7 +52,7 @@ TypeScript rewrite.
 - `afs_local` inherits opencode's working directory.
 - If opencode starts in a nested directory like `packages/opencode`,
   `context.*` tools that default to `cwd/.context` need an explicit
-  `context_path` of `/Users/scawful/src/lab/halext-code-next/.context`.
+  `context_path` of `<repo-root>/.context`.
 - The project plugin now hides that detail for the supported AFS tools by
   forcing the repo-root `context_path` before execution, even if the model
   guessed the workspace root incorrectly.
@@ -74,6 +74,17 @@ TypeScript rewrite.
    packet without paying for a full session pack.
 6. Use `/afs-refresh` only when stale search/index freshness actually matters.
 7. Use `/afs-pack` only when you actually need a handoff/export artifact.
+
+## Global agent sync
+
+Use `scripts/afs-sync-agents` to copy the repo's AFS-oriented project agents
+into your global OpenCode agent directory.
+
+- Default behavior syncs `.opencode/agent/afs-*.md` into
+  `~/.config/opencode/agent`.
+- Use `--dry-run` to preview without writing.
+- Use `--all` to sync every project agent markdown file.
+- Use `--target <dir>` for an alternate destination.
 
 ## Next steps
 

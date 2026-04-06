@@ -39,6 +39,22 @@ describe("plugin.afs-context", () => {
     expect(out.args.destination).toBe(join(ctx, "scratchpad/b.md"))
   })
 
+  test("keeps absolute paths unchanged and normalizes .context root path", async () => {
+    const plugin = await AFSContextPlugin({ directory: dir, worktree: root } as any)
+    const abs = "/tmp/elsewhere/file.md"
+    const out = {
+      args: {
+        path: abs,
+        source: ".context",
+        destination: "history/events.jsonl",
+      } as Record<string, unknown>,
+    }
+    await plugin["tool.execute.before"]?.({ tool: "afs_local_context_move" } as any, out as any)
+    expect(out.args.path).toBe(abs)
+    expect(out.args.source).toBe(join(root, ".context"))
+    expect(out.args.destination).toBe(join(ctx, "history/events.jsonl"))
+  })
+
   test("defaults handoff_create agent_name", async () => {
     const plugin = await AFSContextPlugin({ directory: dir, worktree: root } as any)
     const out = { args: {} as Record<string, unknown> }
@@ -47,13 +63,23 @@ describe("plugin.afs-context", () => {
     expect(out.args.context_path).toBe(ctx)
   })
 
-  test("annotates status and pack output", async () => {
+  test("annotates status, refresh, and pack output", async () => {
     const plugin = await AFSContextPlugin({ directory: dir, worktree: root } as any)
     const status = { output: "status" }
+    const refresh = { output: "refresh" }
     const pack = { output: "pack" }
     await plugin["tool.execute.after"]?.({ tool: "afs_local_context_status" } as any, status as any)
+    await plugin["tool.execute.after"]?.({ tool: "afs_local_context_index_rebuild" } as any, refresh as any)
     await plugin["tool.execute.after"]?.({ tool: "afs_local_session_pack" } as any, pack as any)
     expect(status.output).toContain("Repo note:")
+    expect(refresh.output).toContain("repo-local .context index")
     expect(pack.output).toContain("artifact")
+  })
+
+  test("falls back to directory when worktree is root slash", async () => {
+    const plugin = await AFSContextPlugin({ directory: dir, worktree: "/" } as any)
+    const out = { args: {} as Record<string, unknown> }
+    await plugin["tool.execute.before"]?.({ tool: "afs_local_context_status" } as any, out as any)
+    expect(out.args.context_path).toBe(join(dir, ".context"))
   })
 })

@@ -11,8 +11,11 @@ import { ProviderTransform } from "../provider/transform"
 
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
+import PROMPT_DOCS from "./prompt/docs.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
+import PROMPT_REVIEW from "./prompt/review.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
+import PROMPT_TRIAGE from "./prompt/triage.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 import { PermissionNext } from "@/permission/next"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
@@ -112,6 +115,70 @@ export namespace Agent {
         ),
         mode: "primary",
         native: true,
+      },
+      review: {
+        name: "review",
+        description: "Read-first code review and analysis. Avoids edits by default.",
+        options: {},
+        permission: PermissionNext.merge(
+          defaults,
+          PermissionNext.fromConfig({
+            edit: "deny",
+            question: "allow",
+            todoread: "deny",
+            todowrite: "deny",
+          }),
+          user,
+        ),
+        mode: "primary",
+        native: true,
+        prompt: PROMPT_REVIEW,
+      },
+      triage: {
+        name: "triage",
+        description: "Issue triage agent focused on reproducing and narrowing problems safely.",
+        options: {},
+        permission: PermissionNext.merge(
+          defaults,
+          PermissionNext.fromConfig({
+            edit: "deny",
+            question: "allow",
+            todoread: "deny",
+            todowrite: "deny",
+            bash: {
+              "*": "ask",
+              "git status *": "allow",
+              "git log *": "allow",
+              "git diff *": "allow",
+              "git show *": "allow",
+            },
+          }),
+          user,
+        ),
+        mode: "primary",
+        native: true,
+        prompt: PROMPT_TRIAGE,
+      },
+      docs: {
+        name: "docs",
+        description: "Documentation-focused agent with edit access and restricted shell.",
+        options: {},
+        permission: PermissionNext.merge(
+          defaults,
+          PermissionNext.fromConfig({
+            question: "allow",
+            bash: {
+              "*": "deny",
+              "git status *": "allow",
+              "git diff *": "allow",
+              "git log *": "allow",
+            },
+          }),
+          user,
+        ),
+        mode: "primary",
+        native: true,
+        prompt: PROMPT_DOCS,
       },
       general: {
         name: "general",

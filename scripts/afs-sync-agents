@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+src="$ROOT/.opencode/agent"
+dst="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/agent"
+dry=0
+glob="afs-*.md"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      dry=1
+      shift
+      ;;
+    --all)
+      glob="*.md"
+      shift
+      ;;
+    --target)
+      if [[ $# -lt 2 ]]; then
+        echo "--target requires a directory path" >&2
+        exit 1
+      fi
+      dst="$2"
+      shift 2
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      echo "usage: scripts/afs-sync-agents [--dry-run] [--all] [--target DIR]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ ! -d "$src" ]]; then
+  echo "source directory missing: $src" >&2
+  exit 1
+fi
+
+mkdir -p "$dst"
+
+updated=0
+created=0
+skipped=0
+found=0
+
+for file in "$src"/$glob; do
+  if [[ ! -e "$file" ]]; then
+    continue
+  fi
+  found=1
+  name="$(basename "$file")"
+  out="$dst/$name"
+  has=0
+  if [[ -e "$out" ]]; then
+    has=1
+  fi
+  if [[ -e "$out" ]] && cmp -s "$file" "$out"; then
+    skipped=$((skipped + 1))
+    continue
+  fi
+
+  if [[ $dry -eq 0 ]]; then
+    cp "$file" "$out"
+  fi
+
+  if [[ $has -eq 1 ]]; then
+    updated=$((updated + 1))
+    continue
+  fi
+  created=$((created + 1))
+done
+
+if [[ $found -eq 0 ]]; then
+  echo "no matching files in $src with pattern $glob" >&2
+  exit 1
+fi
+
+echo "synced agents to $dst"
+echo "created: $created"
+echo "updated: $updated"
+echo "unchanged: $skipped"
+if [[ $dry -eq 1 ]]; then
+  echo "mode: dry-run"
+fi

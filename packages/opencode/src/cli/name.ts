@@ -3,6 +3,14 @@ import path from "path"
 export namespace App {
   const fallback = "opencode"
   const skip = new Set(["", "bun", "bunx", "node", "tsx", "ts-node", "index"])
+  const titles: Record<string, string> = {
+    opencode: "OpenCode",
+    hcode: "HCode",
+  }
+  const shortcuts: Record<string, string> = {
+    opencode: "OC",
+    hcode: "HC",
+  }
 
   function env() {
     const value = process.env["OPENCODE_CLI_NAME"]?.trim()
@@ -20,6 +28,20 @@ export namespace App {
 
   export function name() {
     return env() ?? argv() ?? fallback
+  }
+
+  export function title() {
+    const cli = name()
+    return titles[cli] ?? cli
+  }
+
+  export function initials() {
+    const cli = name()
+    return shortcuts[cli] ?? cli.slice(0, 2).toUpperCase()
+  }
+
+  export function mdnsDomain() {
+    return `${name()}.local`
   }
 
   export function cmd(value: string) {

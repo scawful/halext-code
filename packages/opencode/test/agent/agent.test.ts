@@ -20,6 +20,9 @@ test("returns default native agents when no config", async () => {
       const names = agents.map((a) => a.name)
       expect(names).toContain("build")
       expect(names).toContain("plan")
+      expect(names).toContain("review")
+      expect(names).toContain("triage")
+      expect(names).toContain("docs")
       expect(names).toContain("general")
       expect(names).toContain("explore")
       expect(names).toContain("compaction")
@@ -55,6 +58,52 @@ test("plan agent denies edits except .opencode/plans/*", async () => {
       expect(evalPerm(plan, "edit")).toBe("deny")
       // But specific path is allowed
       expect(PermissionNext.evaluate("edit", ".opencode/plans/foo.md", plan!.permission).action).toBe("allow")
+    },
+  })
+})
+
+test("review agent is primary and denies edits", async () => {
+  await using tmp = await tmpdir()
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const review = await Agent.get("review")
+      expect(review).toBeDefined()
+      expect(review?.mode).toBe("primary")
+      expect(evalPerm(review, "edit")).toBe("deny")
+      expect(evalPerm(review, "read")).toBe("allow")
+      expect(evalPerm(review, "bash")).toBe("allow")
+    },
+  })
+})
+
+test("triage agent defaults bash to ask with safe git allows", async () => {
+  await using tmp = await tmpdir()
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const triage = await Agent.get("triage")
+      expect(triage).toBeDefined()
+      expect(triage?.mode).toBe("primary")
+      expect(evalPerm(triage, "edit")).toBe("deny")
+      expect(PermissionNext.evaluate("bash", "git status --short", triage!.permission).action).toBe("allow")
+      expect(PermissionNext.evaluate("bash", "git diff HEAD~1", triage!.permission).action).toBe("allow")
+      expect(PermissionNext.evaluate("bash", "npm test", triage!.permission).action).toBe("ask")
+    },
+  })
+})
+
+test("docs agent allows edits and restricts bash by default", async () => {
+  await using tmp = await tmpdir()
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const docs = await Agent.get("docs")
+      expect(docs).toBeDefined()
+      expect(docs?.mode).toBe("primary")
+      expect(evalPerm(docs, "edit")).toBe("allow")
+      expect(PermissionNext.evaluate("bash", "git diff --name-only", docs!.permission).action).toBe("allow")
+      expect(PermissionNext.evaluate("bash", "bun test", docs!.permission).action).toBe("deny")
     },
   })
 })
@@ -676,6 +725,9 @@ test("defaultAgent throws when all primary agents are disabled", async () => {
       agent: {
         build: { disable: true },
         plan: { disable: true },
+        review: { disable: true },
+        triage: { disable: true },
+        docs: { disable: true },
       },
     },
   })
