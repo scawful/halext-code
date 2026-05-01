@@ -16,6 +16,8 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
 - Prefer `/afs-next <intent>` when the right AFS surface is not obvious. It
   calls Python AFS's deterministic router and returns the first MCP step,
   command route, stop condition, and surfaces to avoid.
+- Prefer short aliases for common daily workflows: `/start`, `/find`, `/check`,
+  `/ship`, `/reply`, `/handoff`, `/fixafs`, and `/setupafs`.
 - Prefer the repo-local slash commands `/afs-next`, `/afs-brief`, `/afs-status`,
   `/afs-query`, `/afs-files`, `/afs-tasks`, `/afs-handoff`,
   `/afs-handoff-create`, `/afs-review-context`, `/afs-work-preflight`,
@@ -82,17 +84,20 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
 
 ## Preferred flow
 
-1. If unsure, route with `/afs-next continue` or
+1. If unsure, route with `/afs-next continue` or use the matching short alias
+   (`/start`, `/find`, `/check`, `/ship`, `/reply`, `/handoff`, `/fixafs`,
+   `/setupafs`).
+2. If no alias fits, route directly with
    `~/src/lab/afs/scripts/afs next --path . --intent <intent> --json`.
-2. Check current state with `/afs-brief`, `afs_local_context_status`, or
+3. Check current state with `/afs-brief`, `afs_local_context_status`, or
    `afs_local_context_query`.
-3. Read scratchpad or handoff state with `afs_local_context_read`.
-4. Use `/afs-help` if you need the command menu, `/afs-review-context` when
+4. Read scratchpad or handoff state with `afs_local_context_read`.
+5. Use `/afs-help` if you need the command menu, `/afs-review-context` when
    context health or drift is the main question, and `/afs-refresh` only when a
    stale index actually matters.
-5. Use `/afs-work-preflight` before work-facing writing and do not post/send
+6. Use `/afs-work-preflight` before work-facing writing and do not post/send
    externally without explicit approval.
-6. Use `/afs-verify` before calling code changes done.
-7. Use `/afs-tasks`, `/afs-handoff`, or `/afs-handoff-create` when the work
+7. Use `/afs-verify` before calling code changes done.
+8. Use `/afs-tasks`, `/afs-handoff`, or `/afs-handoff-create` when the work
    spans multiple steps.
-8. Pack session state only when you explicitly need a handoff/export artifact.
+9. Pack session state only when you explicitly need a handoff/export artifact.

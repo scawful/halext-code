@@ -18,6 +18,8 @@ TypeScript rewrite.
   `/afs-files`, `/afs-handoff`, `/afs-handoff-create`, `/afs-review-context`,
   `/afs-work-preflight`, `/afs-verify`, `/afs-refresh`, `/afs-pack`, and
   `/afs-update-work` flows.
+- Short aliases cover the common daily paths: `/start`, `/find`, `/check`,
+  `/ship`, `/reply`, `/handoff`, `/fixafs`, and `/setupafs`.
 - The default Python AFS MCP catalog is intentionally slim: `context.status`,
   `context.query`, `context.read`, `context.write`, and `context.list`.
   Heavier AFS behavior is reached through CLI/framework hints or an explicit
@@ -76,20 +78,29 @@ TypeScript rewrite.
 
 1. Launch stock opencode with `hcode` from the repo you want to work in.
 2. Let the harness use cheap AFS reads automatically when needed.
-3. Use `/afs-next <intent>` when the agent is unsure which AFS surface to use.
+3. Use the short aliases for common workflows:
+   - `/start`: catch up and continue
+   - `/find <topic>`: search context/scratchpad/prior decisions
+   - `/check`: choose and run verification
+   - `/ship`: scope, verify, and commit/push when explicitly requested
+   - `/reply`: work-safe draft with communication preflight
+   - `/handoff`: continuity note or handoff lookup
+   - `/fixafs`: dry-run context/index repair
+   - `/setupafs`: manager/setup preview
+4. Use `/afs-next <intent>` when the agent is unsure which AFS surface to use.
    It calls `~/src/lab/afs/scripts/afs next --path . --intent <intent> --json`
    and records a small route event for later measurement.
-4. Use `/afs-brief` for the cheapest combined workspace briefing, or
+5. Use `/afs-brief` for the cheapest combined workspace briefing, or
    `/afs-help` if you need the command menu.
-5. Use `/afs-status`, `/afs-query`, `/afs-files`, `/afs-tasks`, `/afs-handoff`,
+6. Use `/afs-status`, `/afs-query`, `/afs-files`, `/afs-tasks`, `/afs-handoff`,
    or `/afs-review-context` for explicit AFS inspection.
-6. Use `/afs-work-preflight` before work-facing writing and `/afs-verify` before
+7. Use `/afs-work-preflight` before work-facing writing and `/afs-verify` before
    calling a code change done.
-7. Use `/afs-handoff-create` when you intentionally want a new continuity
+8. Use `/afs-handoff-create` when you intentionally want a new continuity
    packet without paying for a full session pack.
-8. Use `/afs-refresh` only when stale search/index freshness actually matters.
-9. Use `/afs-pack` only when you actually need a handoff/export artifact.
-10. Use `/afs-update-work` to preview/apply the AFS harness update script from a
+9. Use `/afs-refresh` only when stale search/index freshness actually matters.
+10. Use `/afs-pack` only when you actually need a handoff/export artifact.
+11. Use `/afs-update-work` to preview/apply the AFS harness update script from a
    work-machine checkout.
 
 ## Project agents

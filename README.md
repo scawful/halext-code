@@ -116,6 +116,8 @@ The default AFS MCP catalog stays slim. Use slash commands such as
 `/afs-work-preflight`, `/afs-verify`, and `/afs-pack` for richer AFS
 workflows. `/afs-next` is the default router when an agent is unsure which AFS
 surface to use.
+Daily aliases keep common paths short: `/start`, `/find`, `/check`, `/ship`,
+`/reply`, `/handoff`, `/fixafs`, and `/setupafs`.
 
 Learn more about [agents](https://opencode.ai/docs/agents).
 

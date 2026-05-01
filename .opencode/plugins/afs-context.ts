@@ -56,6 +56,7 @@ const SYSTEM_GUIDANCE = [
   "This workspace uses Python AFS through the afs_local_* MCP tools.",
   "Treat AFS as quiet workspace support by default, not as a foreground workflow.",
   "When unsure which AFS surface to use, route first through /afs-next or `~/src/lab/afs/scripts/afs next --path . --intent <intent> --json`.",
+  "Use short workflow aliases when they fit: /start, /find, /check, /ship, /reply, /handoff, /fixafs, and /setupafs.",
   "Use the deterministic AFS discovery ladder: status -> query -> exact read/list -> scratchpad write -> named CLI/slash-command flow.",
   "The default AFS MCP catalog is intentionally slim: afs_local_context_status, afs_local_context_query, afs_local_context_read, afs_local_context_write, and afs_local_context_list.",
   "Do not assume context.diff, context.freshness, task.*, handoff.*, memory.*, work.*, repair, or session.pack MCP tools are exposed in normal hcode sessions.",

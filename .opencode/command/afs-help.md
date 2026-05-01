@@ -6,6 +6,15 @@ Explain the repo-local AFS command surface for this workspace.
 
 Keep it short and pragmatic. Include:
 
+- Short daily aliases:
+  - `/start` catch up and continue
+  - `/find <topic>` search AFS context
+  - `/check` verify the current change
+  - `/ship` scope, verify, and commit/push if explicitly requested
+  - `/reply` work-safe draft/preflight
+  - `/handoff` continuity note
+  - `/fixafs` dry-run context/index repair
+  - `/setupafs` manager/setup preview
 - `/afs-next [intent]` for the deterministic router when the right AFS surface
   is not obvious
 - `/afs-brief` for a cheap combined workspace briefing
@@ -35,6 +44,8 @@ Rules:
 
 - Make it clear that `/afs-next` is the first stop when an agent is unsure; it
   should prevent browsing hidden agents, docs, or a full MCP catalog.
+- Make it clear that the short aliases are just memorable wrappers around
+  `/afs-next` and the same approval/verification guardrails.
 - Make it clear that `/afs-brief`, `/afs-status`, `/afs-query`, `/afs-tasks`,
   `/afs-files`, `/afs-handoff`, and `/afs-review-context` are the normal
   low-friction paths.
