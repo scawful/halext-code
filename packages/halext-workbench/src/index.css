@@ -190,6 +190,12 @@ textarea {
   transform: translateY(-1px);
 }
 
+.wb-secondary-button.is-active {
+  border-color: rgba(187, 95, 39, 0.35);
+  background: rgba(255, 245, 235, 0.92);
+  color: var(--wb-accent-strong);
+}
+
 .wb-primary-button:disabled {
   cursor: wait;
   opacity: 0.72;
@@ -613,6 +619,84 @@ textarea {
 .wb-compact-list li strong {
   display: inline;
   margin-right: 0.35rem;
+}
+
+.wb-fs-tree-wrap {
+  border: 1px solid var(--wb-line);
+  border-radius: 0.9rem;
+  background: rgba(255, 252, 247, 0.72);
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0.4rem;
+}
+
+.wb-fs-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.wb-fs-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.wb-fs-item {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--wb-ink);
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  text-align: left;
+  padding: 0.35rem 0.45rem;
+}
+
+.wb-fs-item small {
+  color: var(--wb-muted);
+  font-size: 0.72rem;
+}
+
+.wb-fs-item.is-dir {
+  font-weight: 600;
+}
+
+.wb-fs-item:hover {
+  border-color: var(--wb-line);
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.wb-fs-item.is-selected {
+  border-color: rgba(187, 95, 39, 0.32);
+  background: rgba(255, 245, 235, 0.9);
+}
+
+.wb-fs-preview {
+  margin-top: 0.6rem;
+  max-height: 12rem;
+}
+
+.wb-fs-mounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.wb-fs-mount-chip {
+  border: 1px solid var(--wb-line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--wb-ink);
+  cursor: pointer;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.74rem;
 }
 
 @media (max-width: 1080px) {

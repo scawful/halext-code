@@ -3,6 +3,7 @@ import {
   createHalextBridgeClient,
   type AfsBootstrapSummary,
   type AfsContextPack,
+  type FsEntry,
   type AfsHandoffPacket,
   type AfsStatusSummary,
   type AfsTask,
@@ -127,6 +128,43 @@ function formatDuration(start?: number, end?: number) {
   if (!start || !end || end <= start) return ""
   const seconds = (end - start) / 1000
   return seconds >= 10 ? `${seconds.toFixed(0)}s` : `${seconds.toFixed(1)}s`
+}
+
+function formatBytes(value?: number) {
+  if (!value || value <= 0) return ""
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const AFS_MOUNTS = ["scratchpad", "items", "hivemind", "history", "memory", "global", "knowledge", "tools"] as const
+
+function mountOrder(name: string) {
+  const i = AFS_MOUNTS.indexOf(name as (typeof AFS_MOUNTS)[number])
+  return i === -1 ? 99 : i
+}
+
+function sortAfsEntries(entries: FsEntry[]) {
+  return [...entries].toSorted((a, b) => {
+    const ai = mountOrder(a.name)
+    const bi = mountOrder(b.name)
+    if (ai !== bi) return ai - bi
+    if (a.type !== b.type) return a.type === "dir" ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
+}
+
+function focusAfsTree(entries: FsEntry[]) {
+  const context = entries.find((entry) => entry.type === "dir" && entry.name === ".context")
+  if (context) {
+    return [
+      {
+        ...context,
+        children: sortAfsEntries(context.children ?? []),
+      },
+    ]
+  }
+  return sortAfsEntries(entries)
 }
 
 function previewStructuredValue(value: unknown, max = 420) {
@@ -795,6 +833,13 @@ export function WorkbenchApp(props: WorkbenchAppProps) {
   const [afsSummary, setAfsSummary] = createSignal<AfsBootstrapSummary | null>(null)
   const [afsPack, setAfsPack] = createSignal<AfsContextPack | null>(null)
   const [afsPackPath, setAfsPackPath] = createSignal("")
+  const [fsRoot, setFsRoot] = createSignal("")
+  const [fsTarget, setFsTarget] = createSignal("")
+  const [fsEntries, setFsEntries] = createSignal<FsEntry[]>([])
+  const [fsScope, setFsScope] = createSignal<"afs" | "all">("afs")
+  const [fsSelectedPath, setFsSelectedPath] = createSignal("")
+  const [fsPreview, setFsPreview] = createSignal("")
+  const [fsPreviewMeta, setFsPreviewMeta] = createSignal("")
   const [pendingPrompts, setPendingPrompts] = createSignal<PendingPrompt[]>([])
   const [sessionActivities, setSessionActivities] = createSignal<Record<string, SessionActivity>>({})
 
@@ -805,10 +850,13 @@ export function WorkbenchApp(props: WorkbenchAppProps) {
   const [errorText, setErrorText] = createSignal("")
   const [afsErrorText, setAfsErrorText] = createSignal("")
   const [afsPackErrorText, setAfsPackErrorText] = createSignal("")
+  const [fsErrorText, setFsErrorText] = createSignal("")
   const [loadingWorkspace, setLoadingWorkspace] = createSignal(false)
   const [loadingMessages, setLoadingMessages] = createSignal(false)
   const [loadingAfsSummary, setLoadingAfsSummary] = createSignal(false)
   const [loadingAfsPack, setLoadingAfsPack] = createSignal(false)
+  const [loadingFs, setLoadingFs] = createSignal(false)
+  const [loadingFsPreview, setLoadingFsPreview] = createSignal(false)
   const [sendingPrompt, setSendingPrompt] = createSignal(false)
   const [liveSyncState, setLiveSyncState] = createSignal<"idle" | "connecting" | "live" | "reconnecting" | "error">("idle")
   const [liveSyncDetail, setLiveSyncDetail] = createSignal("Live sync idle")
@@ -856,6 +904,14 @@ export function WorkbenchApp(props: WorkbenchAppProps) {
     if (afsSummary()) return "Bridge live"
     if (afsErrorText()) return "Bridge error"
     return "Bridge idle"
+  })
+  const fsVisibleEntries = createMemo(() => (fsScope() === "afs" ? focusAfsTree(fsEntries()) : fsEntries()))
+  const fsMounts = createMemo(() => {
+    const root = fsEntries().find((entry) => entry.type === "dir" && entry.name === ".context")
+    const list = root?.children ?? fsEntries()
+    return sortAfsEntries(list)
+      .filter((entry) => entry.type === "dir" && mountOrder(entry.name) < 99)
+      .map((entry) => entry.name)
   })
 
   createEffect(() => {
@@ -1011,6 +1067,7 @@ export function WorkbenchApp(props: WorkbenchAppProps) {
     if (options?.includeAfsSummary !== false) {
       await refreshAfsSummary(bridgePath)
     }
+    await refreshFs(bridgePath)
 
     setStatusText(
       `Loaded ${nextProjects.length} project${nextProjects.length === 1 ? "" : "s"}, ${nextSessions.length} recent session${nextSessions.length === 1 ? "" : "s"}, and ${nextMcpEntries.length} MCP server${nextMcpEntries.length === 1 ? "" : "s"}.`,
@@ -1088,6 +1145,65 @@ export function WorkbenchApp(props: WorkbenchAppProps) {
     }
   }
 
+  async function refreshFs(target?: string) {
+    const nextBridge = bridgeClient()
+    const root = activeAfsPath()
+    const path = target?.trim() || fsTarget() || root
+    if (!nextBridge) {
+      setFsEntries([])
+      setFsErrorText("Set a bridge URL before loading the file browser.")
+      return
+    }
+    if (!root) {
+      setFsEntries([])
+      setFsErrorText("Pick a project or directory before loading files.")
+      return
+    }
+    setLoadingFs(true)
+    setFsErrorText("")
+    try {
+      const result = await nextBridge.getFsList({
+        root,
+        path,
+        depth: 2,
+        limit: 220,
+      })
+      setFsRoot(result.root)
+      setFsTarget(result.target)
+      setFsEntries(result.entries)
+    } catch (error) {
+      setFsEntries([])
+      setFsErrorText(explainError(error))
+    } finally {
+      setLoadingFs(false)
+    }
+  }
+
+  async function previewFs(path: string) {
+    const nextBridge = bridgeClient()
+    const root = activeAfsPath()
+    if (!nextBridge || !root) return
+    setLoadingFsPreview(true)
+    setFsSelectedPath(path)
+    try {
+      const result = await nextBridge.getFsRead({
+        root,
+        path,
+        maxBytes: 60000,
+      })
+      setFsPreview(result.content)
+      setFsPreviewMeta(
+        `${shortenPath(result.path)} · ${result.mime}${result.truncated ? " · truncated" : ""} · ${formatBytes(result.size)}`,
+      )
+    } catch (error) {
+      setFsPreview("")
+      setFsPreviewMeta("")
+      setFsErrorText(explainError(error))
+    } finally {
+      setLoadingFsPreview(false)
+    }
+  }
+
   async function applyConnection() {
     const normalizedServer = draftServerUrl().trim()
     const normalizedBridge = draftBridgeUrl().trim()
@@ -1099,6 +1215,9 @@ export function WorkbenchApp(props: WorkbenchAppProps) {
     setAfsPack(null)
     setAfsPackPath("")
     setAfsPackErrorText("")
+    setFsPreview("")
+    setFsPreviewMeta("")
+    setFsSelectedPath("")
     props.onServerUrlChange?.(normalizedServer)
     await refreshWorkspace()
   }
@@ -1108,6 +1227,9 @@ export function WorkbenchApp(props: WorkbenchAppProps) {
     setAppliedDirectory(project.worktree)
     setAfsPack(null)
     setAfsPackPath("")
+    setFsPreview("")
+    setFsPreviewMeta("")
+    setFsSelectedPath("")
     await refreshWorkspace()
   }
 
@@ -1419,6 +1541,41 @@ export function WorkbenchApp(props: WorkbenchAppProps) {
     void refreshWorkspace()
   })
 
+  function FsTree(props: { entries: FsEntry[]; level?: number }) {
+    const level = props.level ?? 0
+    return (
+      <ul class="wb-fs-list">
+        <For each={props.entries}>
+          {(entry) => (
+            <li>
+              <button
+                class={`wb-fs-item ${entry.type === "dir" ? "is-dir" : "is-file"} ${fsSelectedPath() === entry.path ? "is-selected" : ""}`}
+                type="button"
+                style={{ "padding-left": `${0.5 + level * 0.55}rem` }}
+                onClick={() => {
+                  if (entry.type === "dir") {
+                    void refreshFs(entry.path)
+                    return
+                  }
+                  void previewFs(entry.path)
+                }}
+              >
+                <span>{entry.type === "dir" ? "▸" : "•"}</span>
+                <span>{entry.name}</span>
+                <Show when={entry.type === "file" && entry.size}>
+                  <small>{formatBytes(entry.size)}</small>
+                </Show>
+              </button>
+              <Show when={entry.type === "dir" && entry.children && entry.children.length > 0 && level < 1}>
+                <FsTree entries={entry.children ?? []} level={level + 1} />
+              </Show>
+            </li>
+          )}
+        </For>
+      </ul>
+    )
+  }
+
   return (
     <div class="wb-shell">
       <div class="wb-backdrop" />
@@ -1725,6 +1882,80 @@ export function WorkbenchApp(props: WorkbenchAppProps) {
                   )}
                 </Show>
               </Show>
+            </Show>
+          </section>
+
+          <section class="wb-panel">
+            <div class="wb-panel-header">
+              <div>
+                <p class="wb-panel-kicker">AFS explorer</p>
+                <h2>File browser</h2>
+              </div>
+              <div class="wb-fs-actions">
+                <button
+                  class={`wb-secondary-button ${fsScope() === "afs" ? "is-active" : ""}`}
+                  type="button"
+                  onClick={() => setFsScope("afs")}
+                >
+                  AFS focus
+                </button>
+                <button
+                  class={`wb-secondary-button ${fsScope() === "all" ? "is-active" : ""}`}
+                  type="button"
+                  onClick={() => setFsScope("all")}
+                >
+                  Show all
+                </button>
+                <button class="wb-secondary-button" type="button" disabled={loadingFs()} onClick={() => void refreshFs()}>
+                  {loadingFs() ? "Loading…" : "Refresh tree"}
+                </button>
+              </div>
+            </div>
+            <p class="wb-muted">
+              Root: {fsRoot() ? shortenPath(fsRoot()) : "No root"} · Target: {fsTarget() ? shortenPath(fsTarget()) : "No target"}
+            </p>
+            <Show when={fsMounts().length > 0}>
+              <div class="wb-pill-row">
+                <span class="wb-muted">Context mounts</span>
+                <div class="wb-fs-mounts">
+                  <For each={fsMounts()}>
+                    {(mount) => (
+                      <button
+                        class="wb-fs-mount-chip"
+                        type="button"
+                        onClick={() => void refreshFs(`${fsRoot()}/.context/${mount}`)}
+                      >
+                        {mount === "items" ? "items/tasks" : mount}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </div>
+            </Show>
+            <Show when={fsErrorText()}>
+              <div class="wb-inline-error">{fsErrorText()}</div>
+            </Show>
+            <Show when={!loadingFs()} fallback={<p class="wb-muted">Loading file tree…</p>}>
+              <Show
+                when={fsVisibleEntries().length > 0}
+                fallback={<div class="wb-note-card"><span>No files found at current path.</span></div>}
+              >
+                <div class="wb-fs-tree-wrap">
+                  <FsTree entries={fsVisibleEntries()} />
+                </div>
+              </Show>
+            </Show>
+            <Show when={fsSelectedPath()}>
+              <div class="wb-note-card">
+                <strong>Preview</strong>
+                <span>{fsPreviewMeta() || shortenPath(fsSelectedPath())}</span>
+                <Show when={loadingFsPreview()}>
+                  <p class="wb-muted">Loading preview…</p>
+                </Show>
+                <Show when={!loadingFsPreview() && fsPreview()}>
+                  <pre class="wb-part-pre wb-fs-preview">{fsPreview()}</pre>
+                </Show>
+              </div>
             </Show>
           </section>
 

@@ -126,6 +126,44 @@ export type PackParams = {
   timeoutMs?: number
 }
 
+export type FsListParams = {
+  path?: string
+  root?: string
+  depth?: number
+  limit?: number
+  includeHidden?: boolean
+}
+
+export type FsReadParams = {
+  path: string
+  root?: string
+  maxBytes?: number
+}
+
+export type FsEntry = {
+  name: string
+  path: string
+  type: "file" | "dir"
+  size?: number
+  mtime?: number
+  children?: FsEntry[]
+}
+
+export type FsListResult = {
+  root: string
+  target: string
+  entries: FsEntry[]
+}
+
+export type FsReadResult = {
+  root: string
+  path: string
+  mime: string
+  truncated: boolean
+  size: number
+  content: string
+}
+
 type RequestParams = Record<string, string | number | undefined>
 
 function normalizeBaseUrl(value: string) {
@@ -191,6 +229,22 @@ export function createHalextBridgeClient(options?: { baseUrl?: string }) {
         max_query_results: params.maxQueryResults,
         max_embedding_results: params.maxEmbeddingResults,
         timeout_ms: params.timeoutMs,
+      })
+    },
+    getFsList(params: FsListParams = {}) {
+      return requestJson<FsListResult>(baseUrl, "/api/fs/list", {
+        path: params.path,
+        root: params.root,
+        depth: params.depth,
+        limit: params.limit,
+        include_hidden: params.includeHidden ? 1 : undefined,
+      })
+    },
+    getFsRead(params: FsReadParams) {
+      return requestJson<FsReadResult>(baseUrl, "/api/fs/read", {
+        path: params.path,
+        root: params.root,
+        max_bytes: params.maxBytes,
       })
     },
   }

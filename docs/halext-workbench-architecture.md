@@ -61,7 +61,15 @@ main opencode UI.
   scratchpad, queued tasks, and the latest handoff.
 - `halext-bridge` exposes an on-demand `session pack` preview for richer cited
   context without writing artifacts on every UI refresh.
+- `halext-bridge` now also exposes root-scoped file listing/preview reads
+  (`/api/fs/list`, `/api/fs/read`) so workbench can provide an AFS Explorer
+  lane without importing opencode internals.
 - Session and message liveliness should come from the exported opencode SDK
   event stream, while AFS-specific reads continue to come from the bridge.
 - Write flows stay out of scope until a future pass proves a real need beyond
   the current read-only AFS lane.
+
+## Operator entrypoint map
+
+For the current list of supported operator entry points (`hcode`,
+workbench+bridge, theme/terminal profile), see `docs/halext-entrypoints.md`.
