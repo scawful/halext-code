@@ -15,8 +15,13 @@ TypeScript rewrite.
   default and keep `session_pack` explicit.
 - Project-local slash commands in `.opencode/command/` provide first-class
   `/afs-brief`, `/afs-help`, `/afs-status`, `/afs-query`, `/afs-tasks`,
-  `/afs-handoff`, `/afs-handoff-create`, `/afs-review-context`,
-  `/afs-refresh`, and `/afs-pack` flows.
+  `/afs-files`, `/afs-handoff`, `/afs-handoff-create`, `/afs-review-context`,
+  `/afs-work-preflight`, `/afs-verify`, `/afs-refresh`, `/afs-pack`, and
+  `/afs-update-work` flows.
+- The default Python AFS MCP catalog is intentionally slim: `context.status`,
+  `context.query`, `context.read`, `context.write`, and `context.list`.
+  Heavier AFS behavior is reached through CLI/framework hints or an explicit
+  full-catalog AFS server.
 - Project-local guidance lives in `.opencode/skills/halext-afs/SKILL.md`.
 - Project-local subagents under `.opencode/agent/` provide AFS-aware planner,
   reviewer, and worker roles for delegation without reviving a forked harness.
@@ -42,6 +47,9 @@ TypeScript rewrite.
   is real and opencode-specific.
 - Keep heavyweight AFS work lazy. `session_pack` should be an explicit command,
   not ambient startup behavior.
+- Keep work-writing approval-gated. `/afs-work-preflight` gathers style
+  evidence and approval state, but posting/sending still needs explicit human
+  approval.
 - Repeated matching `session_pack` calls can reuse the stored pack artifact, so
   the command remains explicit but less volatile than a full rebuild every time.
 - Treat a built-but-stale index as a refresh hint for search-heavy work, not as
@@ -68,12 +76,16 @@ TypeScript rewrite.
 2. Let the harness use cheap AFS reads automatically when needed.
 3. Use `/afs-brief` for the cheapest combined workspace briefing, or
    `/afs-help` if you need the command menu.
-4. Use `/afs-status`, `/afs-query`, `/afs-tasks`, `/afs-handoff`, or
-   `/afs-review-context` for explicit AFS inspection.
-5. Use `/afs-handoff-create` when you intentionally want a new continuity
+4. Use `/afs-status`, `/afs-query`, `/afs-files`, `/afs-tasks`, `/afs-handoff`,
+   or `/afs-review-context` for explicit AFS inspection.
+5. Use `/afs-work-preflight` before work-facing writing and `/afs-verify` before
+   calling a code change done.
+6. Use `/afs-handoff-create` when you intentionally want a new continuity
    packet without paying for a full session pack.
-6. Use `/afs-refresh` only when stale search/index freshness actually matters.
-7. Use `/afs-pack` only when you actually need a handoff/export artifact.
+7. Use `/afs-refresh` only when stale search/index freshness actually matters.
+8. Use `/afs-pack` only when you actually need a handoff/export artifact.
+9. Use `/afs-update-work` to preview/apply the AFS harness update script from a
+   work-machine checkout.
 
 ## Global agent sync
 

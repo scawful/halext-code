@@ -15,7 +15,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 run() {
-  HALEXT_DIRECTORY="$dir" "$ROOT/scripts/hcode" "$@"
+  HALEXT_HCODE_DIRECTORY="$dir" "$ROOT/scripts/hcode" "$@"
 }
 
 grab() {
@@ -53,19 +53,20 @@ if [[ "$list_path" != "$dir/.context/scratchpad" ]]; then
   exit 1
 fi
 
-say "smoke: creating and reading a handoff packet"
-create="$(grab debug agent build --tool afs_local_handoff_create --params '{"accomplished":["provider-free smoke"],"next_steps":["none"],"metadata":{"source":"afs-hcode-smoke"}}')"
-sid="$(json_get result.structuredContent.session_id "$create")"
-agent="$(json_get result.structuredContent.agent_name "$create")"
-if [[ "$agent" != "hcode" ]]; then
-  echo "expected default handoff agent_name hcode, got $agent" >&2
+say "smoke: checking default context read/write tools"
+note=".context/scratchpad/afs_hcode_smoke.md"
+body="hcode smoke: default AFS context tools"
+write="$(grab debug agent build --tool afs_local_context_write --params "{\"path\":\"$note\",\"content\":\"$body\\n\"}")"
+write_path="$(json_get result.structuredContent.path "$write")"
+if [[ "$write_path" != "$dir/$note" ]]; then
+  echo "expected normalized write path $dir/$note, got $write_path" >&2
   exit 1
 fi
 
-read="$(grab debug agent build --tool afs_local_handoff_read --params "{\"session_id\":\"$sid\"}")"
-read_sid="$(json_get result.structuredContent.session_id "$read")"
-if [[ "$read_sid" != "$sid" ]]; then
-  echo "expected handoff read to return $sid, got $read_sid" >&2
+read="$(grab debug agent build --tool afs_local_context_read --params "{\"path\":\"$note\"}")"
+read_text="$(json_get result.structuredContent.content "$read")"
+if [[ "$read_text" != "$body" ]]; then
+  echo "expected smoke note readback, got $read_text" >&2
   exit 1
 fi
 

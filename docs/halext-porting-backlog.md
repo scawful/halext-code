@@ -55,8 +55,9 @@ If daily workflow friction remains, add thin slash-command wrappers before
 adding new custom tools. The likely candidates are:
 
 - `.opencode/command/afs-status.md`
-- `.opencode/command/afs-pack.md`
-- `.opencode/command/handoff-list.md`
+- `.opencode/command/afs-work-preflight.md`
+- `.opencode/command/afs-verify.md`
+- `.opencode/command/afs-update-work.md`
 
 These should call existing upstream or MCP surfaces, not recreate old
 `@halext/tools` behavior.
@@ -82,9 +83,9 @@ the core migration path.
 ## Backlog order
 
 1. Done: wire upstream opencode to local AFS MCP and `afs-scawful` skills.
-2. Next: exercise `session_pack` and `handoff_*` flows from a nested working
-   directory and confirm the current plugin coverage is enough.
-3. Next: decide whether any command aliases are worth adding for daily use.
+2. Next: exercise the slim default MCP tools plus CLI-routed handoff, pack,
+   work-preflight, and verification commands from a nested working directory.
+3. Next: keep command aliases aligned with the AFS default command pack.
 4. Optional: recreate the old `critic` behavior as a project-local agent.
 5. Explicitly not planned: port `@halext/afs`, `@halext/cognitive`,
    `@halext/tui`, theory-of-mind, analysis panes, or the old council system.

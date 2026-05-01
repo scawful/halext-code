@@ -15,9 +15,10 @@ If `$ARGUMENTS` is present:
 
 Rules:
 
-- Start with `afs_local_handoff_list`.
-- Use `afs_local_handoff_read` only when a specific handoff should be opened.
+- Start with `afs_local_context_list` on `scratchpad/handoffs`.
+- Use `afs_local_context_read` only when a specific handoff should be opened.
+- Use MCP `handoff.*` only in an explicit full-catalog/debug session.
 - If the user clearly wants a new handoff packet instead of inspection, point
   them to `/afs-handoff-create`.
-- Do not call `afs_local_session_pack` in this command unless the user
-  explicitly asks for a new handoff or export pack.
+- Do not call session pack in this command unless the user explicitly asks for a
+  new handoff or export pack.

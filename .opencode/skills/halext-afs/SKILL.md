@@ -14,24 +14,25 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
 - Prefer the `afs_local_*` MCP tools over rebuilding AFS behavior in
   TypeScript.
 - Prefer the repo-local slash commands `/afs-brief`, `/afs-status`,
-  `/afs-query`, `/afs-tasks`, `/afs-handoff`, `/afs-handoff-create`,
-  `/afs-review-context`, `/afs-refresh`, and `/afs-pack` when they fit the
-  user's intent.
+  `/afs-query`, `/afs-files`, `/afs-tasks`, `/afs-handoff`,
+  `/afs-handoff-create`, `/afs-review-context`, `/afs-work-preflight`,
+  `/afs-verify`, `/afs-refresh`, `/afs-pack`, and `/afs-update-work` when they
+  fit the user's intent.
 - Use `/afs-help` when the right AFS command is unclear or when a user needs a
   lightweight menu of the available flows.
 - Use `afs_local_context_query` before asking for context that may already
   exist in knowledge, memory, scratchpad, or history.
-- Prefer the blessed default surface first: `afs_local_context_status`,
-  `afs_local_context_query`, `afs_local_context_diff`,
-  `afs_local_context_freshness`, `afs_local_context_read`,
-  `afs_local_context_list`, `afs_local_task_list`,
-  `afs_local_handoff_list`/`read`/`create`, and
-  `afs_local_memory_status`/`search`.
+- Prefer the slim default MCP surface first: `afs_local_context_status`,
+  `afs_local_context_query`, `afs_local_context_read`,
+  `afs_local_context_write`, and `afs_local_context_list`.
+- Route work preflight, verification, handoff, refresh, repair, and session
+  pack flows through slash commands or the AFS CLI unless the session was
+  explicitly launched with the full AFS MCP catalog.
 - Prefer `afs_local_context_read` and `afs_local_context_write` for scratchpad
   and other `.context` file work. The older `afs_local_fs_read` and
   `afs_local_fs_write` names remain compatible aliases.
 - For `afs_local_context_read/list/write/move/delete`, prefer absolute paths
-  under `/Users/scawful/src/lab/halext-code-next/.context`. The project plugin
+  under `/Users/scawful/src/lab/halext-code/.context`. The project plugin
   also normalizes common `.context/...` and mount-relative paths.
 - Use `afs_local_task_*`, `afs_local_hivemind_*`, and `afs_local_handoff_*`
   for multi-step work and handoffs.
@@ -44,7 +45,7 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
 - The project plugin `.opencode/plugins/afs-context.ts` injects the repo-root
   `context_path` for the AFS tools that support it.
 - If a nested-directory session still hits a context error, pass
-  `context_path: "/Users/scawful/src/lab/halext-code-next/.context"`
+  `context_path: "/Users/scawful/src/lab/halext-code/.context"`
   explicitly.
 - Role cues:
   - planner/reviewer subagents should stay on cheap AFS reads
@@ -76,6 +77,9 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
 3. Use `/afs-help` if you need the command menu, `/afs-review-context` when
    context health or drift is the main question, and `/afs-refresh` only when a
    stale index actually matters.
-4. Use `/afs-tasks`, `/afs-handoff`, `/afs-handoff-create`, or the underlying
+4. Use `/afs-work-preflight` before work-facing writing and do not post/send
+   externally without explicit approval.
+5. Use `/afs-verify` before calling code changes done.
+6. Use `/afs-tasks`, `/afs-handoff`, `/afs-handoff-create`, or the underlying
    tools when the work spans multiple steps.
-5. Pack session state only when you explicitly need a handoff/export artifact.
+7. Pack session state only when you explicitly need a handoff/export artifact.

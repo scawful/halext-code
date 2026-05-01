@@ -8,12 +8,15 @@ maintenance/admin operations.
 
 ## Decision
 
-- Keep one main `afs_local` server for stock `hcode`.
-- Do not hard-split the main harness into `core` and `admin` MCP servers.
-- Treat `handoff.*` as a core continuity surface, not as a multi-agent-only
-  feature.
-- Reduce cognitive load by curating a blessed default surface and by cleaning
-  up tool naming, not by removing capability from the main agent.
+- Keep one main `afs_local` server for stock `hcode`, but let Python AFS expose
+  a slim `tools/list` catalog by default.
+- Do not hard-split the main harness into `core` and `admin` MCP servers for
+  day-to-day use; use the full catalog only when explicitly requested.
+- Treat handoff, work preflight, verification, refresh, repair, and session
+  pack flows as CLI/framework or slash-command flows unless a full-catalog
+  server is launched.
+- Reduce cognitive load by making the default MCP list tiny and moving richer
+  intent into commands, prompts, and AFS CLI hints.
 - Reserve env-scoped tool allowlists or secondary MCP wrappers for specialized
   subagents and special clients, not for the primary daily-driver agent.
 
@@ -25,10 +28,12 @@ tool. That is worse than a broad single surface when the user is steering
 real work and occasionally needs heavy operations like repair, refresh,
 mounting, or process control.
 
-The AFS server already has a real scoping seam through `AFS_ALLOWED_TOOLS`.
-That should be used for specialized subagents, background agents, or external
-clients with a different trust profile. It should not be the default shape of
-the main stock-opencode harness.
+The AFS server now also has a catalog seam: default launches expose a tiny
+model-facing list, while `AFS_MCP_TOOL_CATALOG=full` or
+`afs mcp serve --tool-catalog full` exposes the whole registry for migration,
+debugging, or specialized clients. `AFS_ALLOWED_TOOLS` remains the stricter
+permission seam for subagents, background agents, or external clients with a
+different trust profile.
 
 ## Current shape
 
@@ -51,37 +56,51 @@ The current AFS MCP registry exposes a wide mixed surface in
 That shape is fine internally, but it is too flat for a default agent-facing
 surface.
 
-## Blessed default surface
+## Default surface
 
-These are the tools the primary agent should be taught to prefer first:
+These are the only tools the primary agent should see in default `tools/list`:
 
-- `briefing`
 - `context.status`
 - `context.query`
-- `context.diff`
-- `context.freshness`
 - `context.read`
+- `context.write`
 - `context.list`
-- `task.list`
-- `handoff.list`
-- `handoff.read`
-- `handoff.create`
-- `memory.status`
-- `memory.search`
-- `session.pack`
 
 Notes:
 
-- `handoff.create` stays in the default surface because it is useful for
-  context-window steering and user-managed continuity, not just multi-agent
-  workflows.
-- `session.pack` stays available but should remain explicit, not ambient.
+- `context.diff` remains implemented and callable in the full catalog, but it
+  is no longer part of the primary default list.
+- `handoff.*`, `task.*`, `memory.*`, `work.*`, `context.repair`, and
+  `session.pack` stay available through CLI/slash-command flows or full-catalog
+  launches.
+- `session.pack` remains explicit, not ambient.
 
-## Available but lower-salience
+## Command and CLI-routed flows
 
-These tools should remain callable by the main agent, but they should not be
-the first thing the harness suggests:
+These are normal user-facing flows, but they should be reached through
+slash-command prompts and AFS CLI/framework hints rather than default MCP tool
+selection:
 
+- `/afs-work-preflight`
+- `/afs-verify`
+- `/afs-handoff`
+- `/afs-refresh`
+- `/afs-pack`
+- `/afs-update-work`
+- `afs work communication preflight`
+- `afs verify plan` / `afs verify run`
+- `afs session pack`
+- `afs context repair` / `afs index rebuild`
+- `afs-upgrade-agent-setup --work`
+
+## Full-catalog or lower-salience tools
+
+These tools should remain callable by explicit full-catalog launches or
+specialized wrappers, but they should not be the first thing the harness
+suggests:
+
+- `context.diff`
+- `context.freshness`
 - `task.create`
 - `task.claim`
 - `task.complete`
@@ -107,7 +126,6 @@ maintenance/admin actions:
 - `context.init`
 - `context.mount`
 - `context.unmount`
-- `context.write`
 - `context.move`
 - `context.delete`
 - `embeddings.index`
@@ -144,8 +162,10 @@ Implementation guidance:
 ## Opencode integration guidance
 
 - Keep one `afs_local` server in `.opencode/opencode.jsonc`.
-- Teach the blessed default surface through the repo-local plugin, skill, and
+- Teach the slim default surface through the repo-local plugin, skill, and
   slash-command layer.
+- Teach work preflight, verification, handoff, refresh, and setup/update
+  through slash commands rather than re-expanding default `tools/list`.
 - Keep heavyweight operations explicit in command names and tool descriptions.
 - Do not ask the primary stock `build` agent to reason about multiple AFS MCP
   families when one server plus better curation will do.
@@ -156,9 +176,10 @@ Implementation guidance:
 
 - Python AFS now exposes `context.read/write/list/move/delete` while
   preserving `fs.*` compatibility.
-- The halext AFS plugin and skill guidance now prefer the blessed default
-  surface and the `context.*` names.
-- `handoff.*` remains in the default continuity surface.
+- The halext AFS plugin, skill guidance, and slash commands now prefer the slim
+  default surface and the `context.*` names.
+- `handoff.*` is still a first-class continuity flow, but not a default MCP
+  listing.
 
 ## Remaining follow-on work
 

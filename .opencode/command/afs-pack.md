@@ -7,7 +7,10 @@ Create a session pack for this workspace using Python AFS.
 Rules:
 
 - This is the heavy AFS command.
-- Use `afs_local_session_pack`.
+- Use `~/src/lab/afs/scripts/afs session pack --path . --json` or MCP prompt
+  `afs.session.pack` if prompts are exposed.
+- Use MCP `afs_local_session_pack` only in an explicit full-catalog/debug
+  session.
 - Run it once unless the user explicitly asks for a retry with different
   inputs.
 - If the result reports a cache hit or obvious artifact reuse, mention that so

@@ -7,11 +7,13 @@ Review whether AFS context is healthy and sufficient for the current work.
 Rules:
 
 - Start with `afs_local_context_status`.
-- Use `afs_local_context_diff` and `afs_local_context_freshness` when they add
-  real signal.
-- Use `afs_local_task_list`, `afs_local_handoff_list`, or
-  `afs_local_handoff_read` only if they clarify missing task or continuity
-  state.
+- Use `afs_local_context_query`, `afs_local_context_list`, or
+  `afs_local_context_read` when they add real signal.
+- If drift or freshness is the actual question, use the AFS CLI/framework path
+  (`afs context repair --dry-run --json` or `/afs-refresh`) instead of assuming
+  `context.diff` is in the default MCP catalog.
+- Use task or handoff CLI/slash-command flows only if they clarify missing
+  continuity state.
 - If `$ARGUMENTS` names a topic, bug, or area, use `afs_local_context_query`
   for that focus.
 - Do not call `afs_local_session_pack`.

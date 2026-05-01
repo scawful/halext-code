@@ -7,13 +7,14 @@ Refresh AFS context state for this workspace.
 Rules:
 
 - Prefer the lightest repair that matches the issue.
-- If the problem is a stale or missing index, use
-  `afs_local_context_index_rebuild`.
-- Use `afs_local_context_repair` only if the tool output clearly suggests a
-  broader context repair problem.
+- First run `~/src/lab/afs/scripts/afs context repair --path . --dry-run --json`.
+- If the problem is a stale or missing index, run
+  `~/src/lab/afs/scripts/afs index rebuild --path . --json` or
+  `~/src/lab/afs/scripts/afs context repair --path . --rebuild-index --json`.
+- Use MCP repair/rebuild tools only in an explicit full-catalog/debug session.
 - Report what you refreshed and whether lightweight AFS reads should now be
   more trustworthy.
-- Do not call `afs_local_session_pack` in this command.
+- Do not call session pack in this command.
 - If a later status still says `stale`, frame that as a freshness advisory from
   ongoing mount drift unless the index is missing or mount health is actually
   unhealthy.
