@@ -1,0 +1,25 @@
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "theme": "hcode-ghostty",
+  "keybinds": {
+    "leader": "ctrl+x",
+    "command_list": "<leader> p,ctrl+p",
+    "session_new": "<leader> s n,<leader>n",
+    "session_list": "<leader> s l,<leader>l",
+    "session_timeline": "<leader> s t,<leader>g",
+    "session_compact": "<leader> s c,<leader>c",
+    "session_export": "<leader> s e,<leader>x",
+    "status_view": "<leader> s s,<leader>s",
+    "agent_list": "<leader> a a,<leader>a",
+    "model_list": "<leader> a m,<leader>m",
+    "variant_cycle": "<leader> a v,ctrl+t",
+    "theme_list": "<leader> t t,<leader>t",
+    "sidebar_toggle": "<leader> t b,<leader>b",
+    "messages_toggle_conceal": "<leader> t h,<leader>h",
+    "tips_toggle": "<leader> t i,<leader>h",
+    "display_thinking": "<leader> t k",
+    "messages_copy": "<leader> m y,<leader>y",
+    "messages_undo": "<leader> m u,<leader>u",
+    "messages_redo": "<leader> m r,<leader>r"
+  }
+}

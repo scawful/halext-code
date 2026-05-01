@@ -116,6 +116,12 @@ Learn more about [agents](https://opencode.ai/docs/agents).
 
 For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
 
+### Operator Entry Points
+
+This fork includes multiple operator surfaces (`hcode`, workbench + bridge, and
+theme/terminal profile setup). See `docs/halext-entrypoints.md` for the
+recommended flow by use case.
+
 ### Contributing
 
 If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.

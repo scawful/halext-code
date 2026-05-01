@@ -2,11 +2,20 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-project_dir="${HALEXT_DIRECTORY:-$PWD}"
+project_dir="${HALEXT_HCODE_DIRECTORY:-$PWD}"
 
 cd "$project_dir"
 
-export HALEXT_DIRECTORY="$project_dir"
+if [[ -f "/Users/scawful/src/scripts/agent-harness-env" ]]; then
+  # shellcheck source=/Users/scawful/src/scripts/agent-harness-env
+  source "/Users/scawful/src/scripts/agent-harness-env"
+fi
+
+export HALEXT_HCODE_DIRECTORY="$project_dir"
 export OPENCODE_ENABLE_EXA="${OPENCODE_ENABLE_EXA:-1}"
+export AFS_ROOT="${AFS_ROOT:-/Users/scawful/src/lab/afs}"
+export AFS_CLI="${AFS_CLI:-$AFS_ROOT/scripts/afs}"
+export AFS_VENV="${AFS_VENV:-$AFS_ROOT/.venv}"
+export SC_AGENT_HARNESS_CONTRACT="${SC_AGENT_HARNESS_CONTRACT:-/Users/scawful/src/docs/guides/ai-coder/AGENT_HARNESS_CONTRACT.md}"
 
 exec bun --cwd "$ROOT/packages/opencode" --conditions=browser src/hcode.ts "$@"

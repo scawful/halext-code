@@ -3,6 +3,7 @@
 - The default branch in this repo is `dev`.
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
+- Follow the shared harness contract at `~/src/docs/guides/ai-coder/AGENT_HARNESS_CONTRACT.md` for AFS, verification, and cross-agent behavior.
 
 ## Style Guide
 
@@ -31,71 +32,19 @@ THIS RULE IS MANDATORY FOR AGENT WRITTEN CODE.
 - Good short names to prefer: `pid`, `cfg`, `err`, `opts`, `dir`, `root`, `child`, `state`, `timeout`.
 - Examples to avoid unless truly required: `inputPID`, `existingClient`, `connectTimeout`, `workerPath`.
 
-```ts
-// Good
-const foo = 1
-function journal(dir: string) {}
-
-// Bad
-const fooBar = 1
-function prepareJournal(dir: string) {}
-```
-
 Reduce total variable count by inlining when a value is only used once.
-
-```ts
-// Good
-const journal = await Bun.file(path.join(dir, "journal.json")).json()
-
-// Bad
-const journalPath = path.join(dir, "journal.json")
-const journal = await Bun.file(journalPath).json()
-```
 
 ### Destructuring
 
 Avoid unnecessary destructuring. Use dot notation to preserve context.
 
-```ts
-// Good
-obj.a
-obj.b
-
-// Bad
-const { a, b } = obj
-```
-
 ### Variables
 
 Prefer `const` over `let`. Use ternaries or early returns instead of reassignment.
 
-```ts
-// Good
-const foo = condition ? 1 : 2
-
-// Bad
-let foo
-if (condition) foo = 1
-else foo = 2
-```
-
 ### Control Flow
 
 Avoid `else` statements. Prefer early returns.
-
-```ts
-// Good
-function foo() {
-  if (condition) return 1
-  return 2
-}
-
-// Bad
-function foo() {
-  if (condition) return 1
-  else return 2
-}
-```
 
 ### Schema Definitions (Drizzle)
 

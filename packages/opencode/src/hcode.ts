@@ -1,4 +1,4 @@
-const target = process.env.HALEXT_DIRECTORY
+const target = process.env.HALEXT_HCODE_DIRECTORY
 
 process.env.OPENCODE_CLI_NAME ||= "hcode"
 
