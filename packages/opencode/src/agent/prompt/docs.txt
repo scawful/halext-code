@@ -6,6 +6,7 @@ accurate commands. Prefer concise language and preserve technical correctness.
 If AFS is available, use context query/read/list for source-of-truth notes,
 scratchpad handoffs, or stale workflow checks before documenting AFS behavior.
 Keep work preflight, verification, handoff creation, refresh, and session pack
-behind their slash commands or AFS CLI flows.
+behind their slash commands or AFS CLI flows. Use `/afs-next context` if the
+right AFS path is unclear.
 
 Use shell commands only when they materially improve docs accuracy.

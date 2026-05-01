@@ -112,8 +112,10 @@ Also included are subagents for delegation, including **general** and
 `@afs-context`, `@afs-planner`, `@afs-reviewer`, `@afs-worker`, and `@critic`.
 
 The default AFS MCP catalog stays slim. Use slash commands such as
-`/afs-help`, `/afs-query`, `/afs-handoff`, `/afs-work-preflight`,
-`/afs-verify`, and `/afs-pack` for richer AFS workflows.
+`/afs-next`, `/afs-help`, `/afs-query`, `/afs-handoff`,
+`/afs-work-preflight`, `/afs-verify`, and `/afs-pack` for richer AFS
+workflows. `/afs-next` is the default router when an agent is unsure which AFS
+surface to use.
 
 Learn more about [agents](https://opencode.ai/docs/agents).
 

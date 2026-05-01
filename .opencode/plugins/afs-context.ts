@@ -55,10 +55,11 @@ const MOUNTS = new Set([
 const SYSTEM_GUIDANCE = [
   "This workspace uses Python AFS through the afs_local_* MCP tools.",
   "Treat AFS as quiet workspace support by default, not as a foreground workflow.",
+  "When unsure which AFS surface to use, route first through /afs-next or `~/src/lab/afs/scripts/afs next --path . --intent <intent> --json`.",
   "Use the deterministic AFS discovery ladder: status -> query -> exact read/list -> scratchpad write -> named CLI/slash-command flow.",
   "The default AFS MCP catalog is intentionally slim: afs_local_context_status, afs_local_context_query, afs_local_context_read, afs_local_context_write, and afs_local_context_list.",
   "Do not assume context.diff, context.freshness, task.*, handoff.*, memory.*, work.*, repair, or session.pack MCP tools are exposed in normal hcode sessions.",
-  "Prefer repo-local slash commands for richer AFS intents: /afs-brief, /afs-help, /afs-status, /afs-query, /afs-files, /afs-tasks, /afs-handoff, /afs-handoff-create, /afs-review-context, /afs-work-preflight, /afs-verify, /afs-refresh, /afs-pack, and /afs-update-work.",
+  "Prefer repo-local slash commands for richer AFS intents: /afs-next, /afs-brief, /afs-help, /afs-status, /afs-query, /afs-files, /afs-tasks, /afs-handoff, /afs-handoff-create, /afs-review-context, /afs-work-preflight, /afs-verify, /afs-refresh, /afs-pack, and /afs-update-work.",
   "Prefer visible AFS role agents sparingly: @afs-context for context lookup, @afs-planner for plans, @afs-reviewer for findings, @afs-worker for execution, and @critic for a strict second pass.",
   "Specialized exact-name agents exist for advanced flows, but normal agents should prefer slash commands over browsing a larger AFS catalog.",
   "Worker-style agents may read or write repo-local .context files, but should keep default writes in scratchpad and route task/handoff/work/verify/refresh/pack flows through slash commands or the AFS CLI.",

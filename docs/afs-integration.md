@@ -14,7 +14,7 @@ TypeScript rewrite.
 - OpenCode uses the same plugin to bias the harness toward cheap AFS reads by
   default and keep `session_pack` explicit.
 - Project-local slash commands in `.opencode/command/` provide first-class
-  `/afs-brief`, `/afs-help`, `/afs-status`, `/afs-query`, `/afs-tasks`,
+  `/afs-next`, `/afs-brief`, `/afs-help`, `/afs-status`, `/afs-query`, `/afs-tasks`,
   `/afs-files`, `/afs-handoff`, `/afs-handoff-create`, `/afs-review-context`,
   `/afs-work-preflight`, `/afs-verify`, `/afs-refresh`, `/afs-pack`, and
   `/afs-update-work` flows.
@@ -76,17 +76,20 @@ TypeScript rewrite.
 
 1. Launch stock opencode with `hcode` from the repo you want to work in.
 2. Let the harness use cheap AFS reads automatically when needed.
-3. Use `/afs-brief` for the cheapest combined workspace briefing, or
+3. Use `/afs-next <intent>` when the agent is unsure which AFS surface to use.
+   It calls `~/src/lab/afs/scripts/afs next --path . --intent <intent> --json`
+   and records a small route event for later measurement.
+4. Use `/afs-brief` for the cheapest combined workspace briefing, or
    `/afs-help` if you need the command menu.
-4. Use `/afs-status`, `/afs-query`, `/afs-files`, `/afs-tasks`, `/afs-handoff`,
+5. Use `/afs-status`, `/afs-query`, `/afs-files`, `/afs-tasks`, `/afs-handoff`,
    or `/afs-review-context` for explicit AFS inspection.
-5. Use `/afs-work-preflight` before work-facing writing and `/afs-verify` before
+6. Use `/afs-work-preflight` before work-facing writing and `/afs-verify` before
    calling a code change done.
-6. Use `/afs-handoff-create` when you intentionally want a new continuity
+7. Use `/afs-handoff-create` when you intentionally want a new continuity
    packet without paying for a full session pack.
-7. Use `/afs-refresh` only when stale search/index freshness actually matters.
-8. Use `/afs-pack` only when you actually need a handoff/export artifact.
-9. Use `/afs-update-work` to preview/apply the AFS harness update script from a
+8. Use `/afs-refresh` only when stale search/index freshness actually matters.
+9. Use `/afs-pack` only when you actually need a handoff/export artifact.
+10. Use `/afs-update-work` to preview/apply the AFS harness update script from a
    work-machine checkout.
 
 ## Project agents
@@ -104,12 +107,17 @@ TypeScript rewrite.
 
 Agents should use AFS in this order:
 
+0. `/afs-next <intent>` when the route is not obvious.
 1. `afs_local_context_status`
 2. `afs_local_context_query`
 3. `afs_local_context_read` / `afs_local_context_list`
 4. `afs_local_context_write` for scratchpad-only notes
 5. `/afs-*` slash commands or AFS CLI for tasks, handoff, work preflight,
    verification, refresh, repair, and packs
+
+Use `~/src/lab/afs/scripts/afs next report --path . --json` when you want to
+check whether recent agents used the funnel or bypassed it with heavy MCP
+tools.
 
 ## Global agent sync
 

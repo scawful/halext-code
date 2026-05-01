@@ -6,6 +6,8 @@ Explain the repo-local AFS command surface for this workspace.
 
 Keep it short and pragmatic. Include:
 
+- `/afs-next [intent]` for the deterministic router when the right AFS surface
+  is not obvious
 - `/afs-brief` for a cheap combined workspace briefing
 - `/afs-help` for this menu
 - `/afs-status` for a cheap workspace summary
@@ -31,6 +33,8 @@ Keep it short and pragmatic. Include:
 
 Rules:
 
+- Make it clear that `/afs-next` is the first stop when an agent is unsure; it
+  should prevent browsing hidden agents, docs, or a full MCP catalog.
 - Make it clear that `/afs-brief`, `/afs-status`, `/afs-query`, `/afs-tasks`,
   `/afs-files`, `/afs-handoff`, and `/afs-review-context` are the normal
   low-friction paths.

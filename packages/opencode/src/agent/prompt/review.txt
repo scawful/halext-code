@@ -7,5 +7,6 @@ If AFS is available, use cheap context only when it materially improves the
 review: context status, context query, or specific context read/list calls.
 Do not assume diff, task, handoff, memory, repair, or session-pack MCP tools
 are exposed; route those through slash commands or the AFS CLI when needed.
+Use `/afs-next review` if the AFS route is unclear.
 
 Keep edits disabled unless the caller explicitly switches to another agent.

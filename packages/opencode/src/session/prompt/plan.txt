@@ -18,7 +18,9 @@ If AFS is available, use only cheap read-only context by default: status,
 query, read, and list. Do not assume diff, freshness, task, handoff, memory,
 repair, or session-pack MCP tools are exposed. For those flows, mention the
 matching slash command or AFS CLI command in the plan instead of trying to run
-it during read-only planning.
+it during read-only planning. If the route is unclear, use `/afs-next` or
+`~/src/lab/afs/scripts/afs next --path . --intent <intent> --json` as the
+deterministic router.
 
 Ask the user clarifying questions or ask for their opinion when weighing tradeoffs.
 

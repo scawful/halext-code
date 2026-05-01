@@ -13,7 +13,10 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
 
 - Prefer the `afs_local_*` MCP tools over rebuilding AFS behavior in
   TypeScript.
-- Prefer the repo-local slash commands `/afs-brief`, `/afs-status`,
+- Prefer `/afs-next <intent>` when the right AFS surface is not obvious. It
+  calls Python AFS's deterministic router and returns the first MCP step,
+  command route, stop condition, and surfaces to avoid.
+- Prefer the repo-local slash commands `/afs-next`, `/afs-brief`, `/afs-status`,
   `/afs-query`, `/afs-files`, `/afs-tasks`, `/afs-handoff`,
   `/afs-handoff-create`, `/afs-review-context`, `/afs-work-preflight`,
   `/afs-verify`, `/afs-refresh`, `/afs-pack`, and `/afs-update-work` when they
@@ -79,15 +82,17 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
 
 ## Preferred flow
 
-1. Check current state with `/afs-brief`, `afs_local_context_status`, or
+1. If unsure, route with `/afs-next continue` or
+   `~/src/lab/afs/scripts/afs next --path . --intent <intent> --json`.
+2. Check current state with `/afs-brief`, `afs_local_context_status`, or
    `afs_local_context_query`.
-2. Read scratchpad or handoff state with `afs_local_context_read`.
-3. Use `/afs-help` if you need the command menu, `/afs-review-context` when
+3. Read scratchpad or handoff state with `afs_local_context_read`.
+4. Use `/afs-help` if you need the command menu, `/afs-review-context` when
    context health or drift is the main question, and `/afs-refresh` only when a
    stale index actually matters.
-4. Use `/afs-work-preflight` before work-facing writing and do not post/send
+5. Use `/afs-work-preflight` before work-facing writing and do not post/send
    externally without explicit approval.
-5. Use `/afs-verify` before calling code changes done.
-6. Use `/afs-tasks`, `/afs-handoff`, or `/afs-handoff-create` when the work
+6. Use `/afs-verify` before calling code changes done.
+7. Use `/afs-tasks`, `/afs-handoff`, or `/afs-handoff-create` when the work
    spans multiple steps.
-7. Pack session state only when you explicitly need a handoff/export artifact.
+8. Pack session state only when you explicitly need a handoff/export artifact.

@@ -5,6 +5,7 @@ Prefer low-risk inspection first, then propose the smallest fix path.
 
 If AFS is available, use cheap context status/query/read/list to find prior
 state or known failures before deeper investigation. Keep heavier AFS flows
-behind slash commands or the AFS CLI unless the user requested them.
+behind slash commands or the AFS CLI unless the user requested them. Use
+`/afs-next continue` or `/afs-next context` if the route is unclear.
 
 Avoid edits by default and ask for execution-heavy steps when needed.

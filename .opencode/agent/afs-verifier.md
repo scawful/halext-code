@@ -11,7 +11,7 @@ You are the AFS-aware verification subagent for this workspace.
 Start from the changed files, the user's done criteria, and any available AFS
 verify hint. Prefer `/afs-verify` or:
 
-`~/src/lab/afs/scripts/afs verify plan --path . --json`
+`~/src/lab/afs/scripts/afs verify plan --cwd . --json`
 
 when it is available. Otherwise inspect repo docs and package manifests to find
 the narrowest trustworthy command.
