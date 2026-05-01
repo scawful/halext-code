@@ -20,6 +20,8 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
   fit the user's intent.
 - Use `/afs-help` when the right AFS command is unclear or when a user needs a
   lightweight menu of the available flows.
+- Follow the deterministic discovery ladder: status -> query -> exact
+  read/list -> scratchpad write -> named CLI/slash-command flow.
 - Use `afs_local_context_query` before asking for context that may already
   exist in knowledge, memory, scratchpad, or history.
 - Prefer the slim default MCP surface first: `afs_local_context_status`,
@@ -31,11 +33,13 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
 - Prefer `afs_local_context_read` and `afs_local_context_write` for scratchpad
   and other `.context` file work. The older `afs_local_fs_read` and
   `afs_local_fs_write` names remain compatible aliases.
-- For `afs_local_context_read/list/write/move/delete`, prefer absolute paths
+- For `afs_local_context_read/list/write`, prefer absolute paths
   under `/Users/scawful/src/lab/halext-code/.context`. The project plugin
   also normalizes common `.context/...` and mount-relative paths.
-- Use `afs_local_task_*`, `afs_local_hivemind_*`, and `afs_local_handoff_*`
-  for multi-step work and handoffs.
+- Do not assume `afs_local_task_*`, `afs_local_hivemind_*`,
+  `afs_local_handoff_*`, `afs_local_memory_*`, `afs_local_context_diff`, or
+  `afs_local_context_freshness` exist in normal hcode sessions. Use slash
+  commands or the AFS CLI unless a full-catalog session was requested.
 - Treat `afs_local_session_pack` as an explicit heavy step, not a default.
   Use it when the user asks for a pack or when a real handoff/export is needed.
   Repeated matching calls may reuse the stored pack artifact instead of
@@ -49,7 +53,11 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
   explicitly.
 - Role cues:
   - planner/reviewer subagents should stay on cheap AFS reads
-  - worker subagents may use `.context` file tools plus task or handoff writes
+  - context lookup should normally use `@afs-context`, not a broad search over
+    every AFS feature
+  - context/verifier/work/operator subagents should route heavier AFS flows to
+    slash commands or CLI
+  - worker and handoff subagents may use `.context` file writes in scratchpad
   - `session_pack` stays explicit for every role
 
 ## Source of truth
@@ -80,6 +88,6 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
 4. Use `/afs-work-preflight` before work-facing writing and do not post/send
    externally without explicit approval.
 5. Use `/afs-verify` before calling code changes done.
-6. Use `/afs-tasks`, `/afs-handoff`, `/afs-handoff-create`, or the underlying
-   tools when the work spans multiple steps.
+6. Use `/afs-tasks`, `/afs-handoff`, or `/afs-handoff-create` when the work
+   spans multiple steps.
 7. Pack session state only when you explicitly need a handoff/export artifact.

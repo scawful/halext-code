@@ -99,16 +99,21 @@ XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
 
 ### Agents
 
-OpenCode includes two built-in agents you can switch between with the `Tab` key.
+OpenCode includes primary agents you can switch between with the `Tab` key.
 
 - **build** - Default, full-access agent for development work
-- **plan** - Read-only agent for analysis and code exploration
-  - Denies file edits by default
-  - Asks permission before running bash commands
-  - Ideal for exploring unfamiliar codebases or planning changes
+- **plan** - Read-only agent for analysis and implementation plans
+- **review** - Read-only findings-first code review
+- **triage** - Read-only bug reproduction and narrowing
+- **docs** - Documentation-focused writing mode
 
-Also included is a **general** subagent for complex searches and multistep tasks.
-This is used internally and can be invoked using `@general` in messages.
+Also included are subagents for delegation, including **general** and
+**explore**. This fork adds AFS-oriented project agents such as
+`@afs-context`, `@afs-planner`, `@afs-reviewer`, `@afs-worker`, and `@critic`.
+
+The default AFS MCP catalog stays slim. Use slash commands such as
+`/afs-help`, `/afs-query`, `/afs-handoff`, `/afs-work-preflight`,
+`/afs-verify`, and `/afs-pack` for richer AFS workflows.
 
 Learn more about [agents](https://opencode.ai/docs/agents).
 

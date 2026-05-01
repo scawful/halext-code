@@ -23,6 +23,11 @@ Keep it short and pragmatic. Include:
   matters
 - `/afs-pack` for an explicit heavy handoff/export pack
 - `/afs-update-work` for previewing/applying the AFS harness update path
+- `@afs-context` for cheap AFS context lookup
+- `@afs-planner`, `@afs-reviewer`, and `@afs-worker` for AFS-aware delegation
+- `@critic` for a strict second pass on slop, overreach, regressions, and tests
+- exact-name specialized agents exist for advanced verification, handoff,
+  work-preflight, and operator lanes, but slash commands are the normal route
 
 Rules:
 
@@ -35,6 +40,11 @@ Rules:
   writing, and that posting/sending still requires explicit approval.
 - Make it clear that `/afs-refresh`, `/afs-pack`, and `/afs-update-work` are
   intentional, heavier-weight actions.
+- Make it clear that the default MCP catalog stays slim; task, handoff, memory,
+  work, repair, and pack behavior should use commands or the AFS CLI unless a
+  full-catalog session is explicitly requested.
+- Make the discovery ladder explicit: status -> query -> exact read/list ->
+  scratchpad write -> named command.
 - If the user supplied `$ARGUMENTS`, tailor the recommendation order to that
   intent.
 

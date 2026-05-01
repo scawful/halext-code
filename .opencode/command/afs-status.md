@@ -9,9 +9,11 @@ Rules:
 
 - Keep this cheap and fast.
 - Start with `afs_local_context_status`.
-- You may use `afs_local_task_list`, `afs_local_handoff_list`,
-  `afs_local_context_freshness`, or `afs_local_memory_status` if they add real
-  signal.
+- Use `afs_local_context_query`, `afs_local_context_list`, or
+  `afs_local_context_read` only when they add real signal.
+- Do not call nondefault task, handoff, memory, diff, freshness, repair, or
+  session-pack MCP tools. Point to the matching slash command or AFS CLI flow
+  when those details matter.
 - Do not call `afs_local_session_pack` in this command.
 - If the index is built but marked stale, describe that as a refresh
   recommendation for search-heavy work, not as a broken or missing index.
@@ -26,8 +28,7 @@ Summarize:
 
 - overall context health
 - stale index or freshness issues
-- pending tasks if any
-- recent handoff state if relevant
+- task or handoff details only as routed follow-up commands
 - one short recommendation if maintenance is needed, preferably pointing to
   `/afs-refresh` when a refresh is the right next step
 

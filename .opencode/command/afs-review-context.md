@@ -12,8 +12,10 @@ Rules:
 - If drift or freshness is the actual question, use the AFS CLI/framework path
   (`afs context repair --dry-run --json` or `/afs-refresh`) instead of assuming
   `context.diff` is in the default MCP catalog.
-- Use task or handoff CLI/slash-command flows only if they clarify missing
-  continuity state.
+- Use task, handoff, memory, or work CLI/slash-command flows only if they
+  clarify missing continuity state.
+- Do not call full-catalog MCP tools unless the session was explicitly launched
+  for full-catalog/debug work.
 - If `$ARGUMENTS` names a topic, bug, or area, use `afs_local_context_query`
   for that focus.
 - Do not call `afs_local_session_pack`.

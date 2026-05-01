@@ -23,8 +23,10 @@ TypeScript rewrite.
   Heavier AFS behavior is reached through CLI/framework hints or an explicit
   full-catalog AFS server.
 - Project-local guidance lives in `.opencode/skills/halext-afs/SKILL.md`.
-- Project-local subagents under `.opencode/agent/` provide AFS-aware planner,
-  reviewer, and worker roles for delegation without reviving a forked harness.
+- Project-local subagents under `.opencode/agent/` provide a small visible
+  AFS-aware set for context, planning, review, worker, and critic lanes.
+  Specialized exact-name agents exist for advanced flows, but slash commands
+  remain the normal route.
 - The current AFS MCP surface and proposed cleanup are documented in
   `docs/afs-tool-taxonomy.md`.
 - The preferred operator entrypoint is stock opencode through `hcode`, not the
@@ -86,6 +88,28 @@ TypeScript rewrite.
 8. Use `/afs-pack` only when you actually need a handoff/export artifact.
 9. Use `/afs-update-work` to preview/apply the AFS harness update script from a
    work-machine checkout.
+
+## Project agents
+
+- `@afs-context`: cheap status/query/read/list context lookup.
+- `@afs-planner`: AFS-aware planning without edits or full-catalog assumptions.
+- `@afs-reviewer`: findings-first review with context and freshness caveats.
+- `@afs-worker`: executes repo work while keeping scratchpad continuity.
+- `@critic`: strict no-edit review for slop, overreach, regressions, and
+  missing tests.
+- Hidden exact-name agents exist for advanced verification, handoff,
+  work-preflight, and operator lanes when explicit delegation is useful.
+
+## Discovery ladder
+
+Agents should use AFS in this order:
+
+1. `afs_local_context_status`
+2. `afs_local_context_query`
+3. `afs_local_context_read` / `afs_local_context_list`
+4. `afs_local_context_write` for scratchpad-only notes
+5. `/afs-*` slash commands or AFS CLI for tasks, handoff, work preflight,
+   verification, refresh, repair, and packs
 
 ## Global agent sync
 
