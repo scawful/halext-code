@@ -70,6 +70,18 @@ function init() {
     }
   })
 
+  keybind.onResolve((seq) => {
+    if (suspended()) return
+    if (dialog.stack.length > 0) return
+    for (const option of entries()) {
+      if (!isEnabled(option)) continue
+      if (!option.keybind) continue
+      if (!keybind.matchSequence(option.keybind, seq)) continue
+      option.onSelect?.(dialog)
+      return
+    }
+  })
+
   const result = {
     trigger(name: string) {
       for (const option of entries()) {
@@ -91,6 +103,9 @@ function init() {
           onSelect: () => result.trigger(option.value),
         }
       })
+    },
+    options() {
+      return visibleOptions()
     },
     keybinds(enabled: boolean) {
       setSuspendCount((count) => count + (enabled ? -1 : 1))

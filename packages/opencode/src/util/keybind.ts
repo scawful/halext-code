@@ -9,6 +9,7 @@ export namespace Keybind {
   export type Info = Pick<ParsedKey, "name" | "ctrl" | "meta" | "shift" | "super"> & {
     leader: boolean // our custom field
   }
+  export type Sequence = Info[]
 
   export function match(a: Info | undefined, b: Info): boolean {
     if (!a) return false
@@ -54,50 +55,88 @@ export namespace Keybind {
     return result
   }
 
-  export function parse(key: string): Info[] {
+  export function sequenceToString(sequence: Sequence | undefined): string {
+    if (!sequence?.length) return ""
+    return sequence.map((step) => toString(step)).filter(Boolean).join(" ")
+  }
+
+  export function equalSequence(a: Sequence, b: Sequence): boolean {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) {
+      if (!match(a[i], b[i]!)) return false
+    }
+    return true
+  }
+
+  export function startsWithSequence(sequence: Sequence, prefix: Sequence): boolean {
+    if (prefix.length > sequence.length) return false
+    for (let i = 0; i < prefix.length; i++) {
+      if (!match(sequence[i], prefix[i]!)) return false
+    }
+    return true
+  }
+
+  function parseStep(token: string): Info {
+    const parts = token.toLowerCase().split("+")
+    const info: Info = {
+      ctrl: false,
+      meta: false,
+      shift: false,
+      leader: false,
+      name: "",
+    }
+
+    for (const part of parts) {
+      switch (part) {
+        case "ctrl":
+          info.ctrl = true
+          break
+        case "alt":
+        case "meta":
+        case "option":
+          info.meta = true
+          break
+        case "super":
+          info.super = true
+          break
+        case "shift":
+          info.shift = true
+          break
+        case "leader":
+          info.leader = true
+          break
+        case "esc":
+          info.name = "escape"
+          break
+        default:
+          info.name = part
+          break
+      }
+    }
+
+    return info
+  }
+
+  export function parseSequence(key: string): Sequence[] {
     if (key === "none") return []
-
-    return key.split(",").map((combo) => {
-      // Handle <leader> syntax by replacing with leader+
-      const normalized = combo.replace(/<leader>/g, "leader+")
-      const parts = normalized.toLowerCase().split("+")
-      const info: Info = {
-        ctrl: false,
-        meta: false,
-        shift: false,
-        leader: false,
-        name: "",
-      }
-
-      for (const part of parts) {
-        switch (part) {
-          case "ctrl":
-            info.ctrl = true
-            break
-          case "alt":
-          case "meta":
-          case "option":
-            info.meta = true
-            break
-          case "super":
-            info.super = true
-            break
-          case "shift":
-            info.shift = true
-            break
-          case "leader":
-            info.leader = true
-            break
-          case "esc":
-            info.name = "escape"
-            break
-          default:
-            info.name = part
-            break
+    return key
+      .split(",")
+      .map((raw) => raw.trim())
+      .filter(Boolean)
+      .map((combo) => combo.replace(/<leader>\s+/gi, "<leader>").replace(/<leader>/gi, "leader+"))
+      .map((combo) => combo.split(/\s+/).map((step) => parseStep(step)))
+      .map((sequence) => {
+        const out: Sequence = []
+        for (const step of sequence) {
+          if (step.leader && !step.name && out.length < sequence.length - 1) continue
+          out.push(step)
         }
-      }
+        return out
+      })
+      .filter((sequence) => sequence.length > 0)
+  }
 
-      return info
-    })
+  export function parse(key: string): Info[] {
+    return parseSequence(key).map((sequence) => sequence[0]!).filter(Boolean)
   }
 }

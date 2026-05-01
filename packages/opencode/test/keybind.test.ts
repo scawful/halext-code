@@ -419,3 +419,26 @@ describe("Keybind.parse", () => {
     ])
   })
 })
+
+describe("Keybind.parseSequence", () => {
+  test("should parse leader chain with spaces", () => {
+    const result = Keybind.parseSequence("<leader> f s")
+    expect(result).toEqual([
+      [
+        { ctrl: false, meta: false, shift: false, leader: true, name: "f" },
+        { ctrl: false, meta: false, shift: false, leader: false, name: "s" },
+      ],
+    ])
+  })
+
+  test("should parse mixed alternatives with chains", () => {
+    const result = Keybind.parseSequence("<leader>f s,ctrl+k")
+    expect(result).toEqual([
+      [
+        { ctrl: false, meta: false, shift: false, leader: true, name: "f" },
+        { ctrl: false, meta: false, shift: false, leader: false, name: "s" },
+      ],
+      [{ ctrl: true, meta: false, shift: false, leader: false, name: "k" }],
+    ])
+  })
+})

@@ -12,22 +12,22 @@ OpenCode has a list of keybinds that you can customize through `tui.json`.
     "leader": "ctrl+x",
     "app_exit": "ctrl+c,ctrl+d,<leader>q",
     "editor_open": "<leader>e",
-    "theme_list": "<leader>t",
-    "sidebar_toggle": "<leader>b",
+    "theme_list": "<leader> t t,<leader>t",
+    "sidebar_toggle": "<leader> t b,<leader>b",
     "scrollbar_toggle": "none",
     "username_toggle": "none",
-    "status_view": "<leader>s",
+    "status_view": "<leader> s s,<leader>s",
     "tool_details": "none",
-    "session_export": "<leader>x",
-    "session_new": "<leader>n",
-    "session_list": "<leader>l",
-    "session_timeline": "<leader>g",
+    "session_export": "<leader> s e,<leader>x",
+    "session_new": "<leader> s n,<leader>n",
+    "session_list": "<leader> s l,<leader>l",
+    "session_timeline": "<leader> s t,<leader>g",
     "session_fork": "none",
     "session_rename": "none",
     "session_share": "none",
     "session_unshare": "none",
     "session_interrupt": "escape",
-    "session_compact": "<leader>c",
+    "session_compact": "<leader> s c,<leader>c",
     "session_child_first": "<leader>down",
     "session_child_cycle": "right",
     "session_child_cycle_reverse": "left",
@@ -42,19 +42,19 @@ OpenCode has a list of keybinds that you can customize through `tui.json`.
     "messages_last": "ctrl+alt+g,end",
     "messages_next": "none",
     "messages_previous": "none",
-    "messages_copy": "<leader>y",
-    "messages_undo": "<leader>u",
-    "messages_redo": "<leader>r",
+    "messages_copy": "<leader> m y,<leader>y",
+    "messages_undo": "<leader> m u,<leader>u",
+    "messages_redo": "<leader> m r,<leader>r",
     "messages_last_user": "none",
-    "messages_toggle_conceal": "<leader>h",
-    "model_list": "<leader>m",
+    "messages_toggle_conceal": "<leader> t h,<leader>h",
+    "model_list": "<leader> a m,<leader>m",
     "model_cycle_recent": "f2",
     "model_cycle_recent_reverse": "shift+f2",
     "model_cycle_favorite": "none",
     "model_cycle_favorite_reverse": "none",
-    "variant_cycle": "ctrl+t",
-    "command_list": "ctrl+p",
-    "agent_list": "<leader>a",
+    "variant_cycle": "<leader> a v,ctrl+t",
+    "command_list": "<leader> p,ctrl+p",
+    "agent_list": "<leader> a a,<leader>a",
     "agent_cycle": "tab",
     "agent_cycle_reverse": "shift+tab",
     "input_clear": "ctrl+c",
@@ -98,8 +98,8 @@ OpenCode has a list of keybinds that you can customize through `tui.json`.
     "history_next": "down",
     "terminal_suspend": "ctrl+z",
     "terminal_title_toggle": "none",
-    "tips_toggle": "<leader>h",
-    "display_thinking": "none"
+    "tips_toggle": "<leader> t i,<leader>h",
+    "display_thinking": "<leader> t k"
   }
 }
 ```
@@ -111,6 +111,8 @@ OpenCode has a list of keybinds that you can customize through `tui.json`.
 OpenCode uses a `leader` key for most keybinds. This avoids conflicts in your terminal.
 
 By default, `ctrl+x` is the leader key and most actions require you to first press the leader key and then the shortcut. For example, to start a new session you first press `ctrl+x` and then press `n`.
+
+Keybind values can also define multi-key chains. For example, `"<leader> s l"` means: press `ctrl+x`, then `s`, then `l`.
 
 You don't need to use a leader key for your keybinds but we recommend doing so.
 
@@ -127,6 +129,83 @@ You can disable a keybind by adding the key to `tui.json` with a value of "none"
   "$schema": "https://opencode.ai/tui.json",
   "keybinds": {
     "session_compact": "none"
+  }
+}
+```
+
+---
+
+## Preset profiles
+
+Use these as starting points by copying the `keybinds` block into your `tui.json`.
+
+### Spacemacs-style (grouped leader chains)
+
+```json title="tui.json"
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "keybinds": {
+    "leader": "ctrl+x",
+    "command_list": "<leader> p,ctrl+p",
+    "session_new": "<leader> s n,<leader>n",
+    "session_list": "<leader> s l,<leader>l",
+    "session_timeline": "<leader> s t,<leader>g",
+    "session_compact": "<leader> s c,<leader>c",
+    "session_export": "<leader> s e,<leader>x",
+    "status_view": "<leader> s s,<leader>s",
+    "agent_list": "<leader> a a,<leader>a",
+    "model_list": "<leader> a m,<leader>m",
+    "variant_cycle": "<leader> a v,ctrl+t",
+    "theme_list": "<leader> t t,<leader>t",
+    "sidebar_toggle": "<leader> t b,<leader>b",
+    "messages_toggle_conceal": "<leader> t h,<leader>h",
+    "tips_toggle": "<leader> t i,<leader>h",
+    "display_thinking": "<leader> t k",
+    "messages_copy": "<leader> m y,<leader>y",
+    "messages_undo": "<leader> m u,<leader>u",
+    "messages_redo": "<leader> m r,<leader>r"
+  }
+}
+```
+
+### Vim-ish (quick session/message focus)
+
+```json title="tui.json"
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "keybinds": {
+    "leader": "ctrl+x",
+    "command_list": "ctrl+p",
+    "session_new": "<leader>n",
+    "session_list": "<leader>l",
+    "session_timeline": "<leader>g",
+    "messages_page_up": "ctrl+b,pageup",
+    "messages_page_down": "ctrl+f,pagedown",
+    "messages_first": "g",
+    "messages_last": "shift+g,end",
+    "messages_next": "j",
+    "messages_previous": "k",
+    "session_interrupt": "escape"
+  }
+}
+```
+
+### Minimal (few conflicts, low cognitive load)
+
+```json title="tui.json"
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "keybinds": {
+    "leader": "ctrl+x",
+    "command_list": "ctrl+p",
+    "session_new": "<leader>n",
+    "session_list": "<leader>l",
+    "model_list": "<leader>m",
+    "status_view": "<leader>s",
+    "session_interrupt": "escape",
+    "messages_next": "none",
+    "messages_previous": "none",
+    "tips_toggle": "none"
   }
 }
 ```

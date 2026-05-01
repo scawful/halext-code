@@ -42,6 +42,7 @@ import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { TuiConfigProvider } from "./context/tui-config"
 import { TuiConfig } from "@/config/tui"
 import { App as CliApp } from "@/cli/name"
+import { LeaderHints } from "./component/leader-hints"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -762,6 +763,7 @@ function App() {
           <Session />
         </Match>
       </Switch>
+      <LeaderHints />
     </box>
   )
 }
