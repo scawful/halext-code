@@ -1,3 +1,4 @@
+import { existsSync } from "fs"
 import { isAbsolute, join } from "path"
 import type { Plugin } from "@opencode-ai/plugin"
 
@@ -69,9 +70,29 @@ const SYSTEM_GUIDANCE = [
   "If an AFS tool is slow or times out, report that plainly and fall back to lighter-weight AFS context instead of retrying aggressively.",
 ]
 
-export const AFSContextPlugin: Plugin = async ({ directory, worktree }) => {
+export const AFSContextPlugin: Plugin = async ({ directory, worktree, $ }) => {
   const base = worktree === "/" ? directory : worktree
   const root = join(base, ".context")
+
+  // Per-session cache of the live AFS grounding block (project intent, scratchpad,
+  // stakeholders, pending approvals, work-communication contract). system.transform
+  // fires on every request but only carries {sessionID, model}, so the grounding is
+  // session-level — shell the AFS CLI once per session, not once per turn. Every
+  // failure path degrades to "" so a broken/absent AFS never blocks the session.
+  let grounding: { sessionID: string; text: string } | null = null
+  const loadGrounding = async (): Promise<string> => {
+    if (!existsSync(root)) return ""
+    const bin = process.env.AFS_BIN?.trim() || "afs"
+    try {
+      const result = await $`${bin} claude hook --raw --event SessionStart --path ${base}`
+        .quiet()
+        .nothrow()
+      if (result.exitCode !== 0) return ""
+      return result.stdout.toString().trim()
+    } catch {
+      return ""
+    }
+  }
   const staleNote =
     "\n\nRepo note: in this workspace, a built-but-stale index is usually a freshness advisory, not a hard failure. If mounts are healthy and the index exists, prefer normal cheap AFS reads and refresh only before search-heavy work."
   const refreshNote =
@@ -90,8 +111,16 @@ export const AFSContextPlugin: Plugin = async ({ directory, worktree }) => {
   }
 
   return {
-    "experimental.chat.system.transform": async (_, output) => {
+    "experimental.chat.system.transform": async (input, output) => {
       output.system.push([...SYSTEM_GUIDANCE, fileNote].join("\n"))
+      // Push live AFS grounding so context reaches the model without an explicit
+      // prompt (pull -> push). Appended, never prepended: llm.ts re-collapses
+      // system[1..] and preserves system[0], so the prompt-cache header is intact.
+      const sessionID = typeof input?.sessionID === "string" ? input.sessionID : ""
+      if (!grounding || grounding.sessionID !== sessionID) {
+        grounding = { sessionID, text: await loadGrounding() }
+      }
+      if (grounding.text) output.system.push(grounding.text)
     },
     "tool.execute.before": async (input, output) => {
       const args = output.args as Record<string, unknown>
