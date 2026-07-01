@@ -8,7 +8,9 @@ import { Database, eq } from "@/storage/db"
 import { InstanceState } from "@/util/instance-state"
 import { Log } from "@/util/log"
 import { Wildcard } from "@/util/wildcard"
+import { Plugin } from "@/plugin"
 import { Deferred, Effect, Layer, Schema, ServiceMap } from "effect"
+import type { Permission } from "@opencode-ai/sdk"
 import z from "zod"
 import { PermissionID } from "./schema"
 
@@ -153,6 +155,9 @@ export class PermissionService extends ServiceMap.Service<PermissionService, Per
         for (const pattern of request.patterns) {
           const rule = evaluate(request.permission, pattern, ruleset, state.approved)
           log.info("evaluated", { permission: request.permission, pattern, action: rule })
+          // A config `deny` is absolute: it returns immediately, before the
+          // permission.ask plugin hook below ever runs. Plugins therefore can
+          // never loosen a deny — only escalate an allow/ask.
           if (rule.action === "deny") {
             return yield* new DeniedError({
               ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
@@ -162,13 +167,39 @@ export class PermissionService extends ServiceMap.Service<PermissionService, Per
           pending = true
         }
 
-        if (!pending) return
-
         const id = request.id ?? PermissionID.ascending()
         const info: Request = {
           id,
           ...request,
         }
+
+        // permission.ask plugin hook. Runs on EVERY request that was not denied
+        // by config — including ones a runtime "allow always" grant would auto-
+        // approve. A plugin may escalate the decision (allow -> ask/deny) and may
+        // enrich `info.metadata` (e.g. a comms-draft preview shown in the prompt),
+        // but it can never downgrade: a returned "allow" is ignored when the
+        // evaluated action was already "ask", and config `deny` returned above.
+        // This is what makes the comms guardrail un-bypassable by a stale
+        // allow-always. A throwing hook keeps the evaluated decision (fail-closed
+        // for the guardrail is the plugin's own responsibility).
+        const decision: { status: Action } = { status: pending ? "ask" : "allow" }
+        yield* Effect.promise(() =>
+          Plugin.trigger("permission.ask", info as unknown as Permission, decision).catch((err) => {
+            log.error("permission.ask hook failed; keeping evaluated decision", {
+              error: err instanceof Error ? err.message : String(err),
+            })
+            return decision
+          }),
+        )
+        if (decision.status === "deny") {
+          return yield* new DeniedError({
+            ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
+          })
+        }
+        if (decision.status === "ask") pending = true
+
+        if (!pending) return
+
         log.info("asking", { id, permission: info.permission, patterns: info.patterns })
 
         const deferred = yield* Deferred.make<void, RejectedError | CorrectedError>()
