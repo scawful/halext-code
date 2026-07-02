@@ -26,19 +26,113 @@ const LEADING_WRAPPERS = new Set(["sudo", "env", "command", "nohup", "time", "xa
 const SHELL_INTERPRETERS = new Set(["bash", "sh", "zsh", "dash", "ksh", "ash", "fish"])
 const MAX_WRAPPER_DEPTH = 3
 
+function shellTokens(text: string): string[] {
+  const tokens: string[] = []
+  let buf = ""
+  let quote = ""
+  let token = false
+  let escape = false
+
+  for (const char of text) {
+    if (escape) {
+      buf += char
+      token = true
+      escape = false
+      continue
+    }
+    if (char === "\\" && quote !== "'") {
+      escape = true
+      token = true
+      continue
+    }
+    if (quote) {
+      if (char === quote) quote = ""
+      else buf += char
+      token = true
+      continue
+    }
+    if (char === "'" || char === '"') {
+      quote = char
+      token = true
+      continue
+    }
+    if (/\s/.test(char)) {
+      if (token) tokens.push(buf)
+      buf = ""
+      token = false
+      continue
+    }
+    buf += char
+    token = true
+  }
+  if (escape) buf += "\\"
+  if (token) tokens.push(buf)
+  return tokens
+}
+
+function base(token: string): string {
+  return (token.split(/[\\/]/).pop() ?? "").toLowerCase()
+}
+
+function skipSudo(tokens: string[], index: number): number {
+  let i = index + 1
+  while (i < tokens.length) {
+    const t = tokens[i]
+    if (!t.startsWith("-")) break
+    i++
+    if (["-u", "-g", "-h", "-p", "-C", "-T"].includes(t) && i < tokens.length) i++
+  }
+  return i
+}
+
+function skipEnv(tokens: string[], index: number): number {
+  let i = index + 1
+  while (i < tokens.length) {
+    const t = tokens[i]
+    if (/^[A-Za-z_]\w*=/.test(t)) {
+      i++
+      continue
+    }
+    if (!t.startsWith("-")) break
+    i++
+    if (["-u", "-S", "-P"].includes(t) && i < tokens.length) i++
+  }
+  return i
+}
+
+function commandIndex(tokens: string[]): number {
+  let i = 0
+  while (i < tokens.length) {
+    const t = tokens[i]
+    if (/^[A-Za-z_]\w*=/.test(t)) {
+      i++
+      continue
+    }
+    const cmd = base(t)
+    if (cmd === "sudo") {
+      i = skipSudo(tokens, i)
+      continue
+    }
+    if (cmd === "env") {
+      i = skipEnv(tokens, i)
+      continue
+    }
+    if (LEADING_WRAPPERS.has(cmd)) {
+      i++
+      continue
+    }
+    break
+  }
+  return i
+}
+
 /** True if the token list has a shell inline-script flag: -c, -lc, -ic, -lic, ... */
 function hasInlineScriptFlag(tokens: string[]): boolean {
   return tokens.some((t) => /^-[a-z]*c[a-z]*$/i.test(t))
 }
 
-/** The inline script a shell wrapper would run: the first quoted segment, else the
- *  tokens following the -c-family flag when the script is unquoted. */
-function extractInlineScript(commandText: string, tokens: string[]): string | null {
-  const quoted = commandText.match(/'([^']*)'|"([^"]*)"/)
-  if (quoted) {
-    const value = quoted[1] ?? quoted[2] ?? ""
-    if (value.trim()) return value
-  }
+/** The inline script a shell wrapper would run: the token following the -c flag. */
+function extractInlineScript(tokens: string[]): string | null {
   const flagIdx = tokens.findIndex((t) => /^-[a-z]*c[a-z]*$/i.test(t))
   if (flagIdx >= 0 && flagIdx + 1 < tokens.length) {
     const rest = tokens.slice(flagIdx + 1).join(" ").trim()
@@ -67,22 +161,8 @@ export const POLICY =
 /** The program a single command actually runs: basename of argv[0], skipping leading
  *  `VAR=val` assignments and wrappers like sudo/env. Lowercased. */
 export function commandName(commandText: string): string {
-  const tokens = commandText.trim().split(/\s+/)
-  let i = 0
-  while (i < tokens.length) {
-    const t = tokens[i]
-    if (/^[A-Za-z_]\w*=/.test(t)) {
-      i++
-      continue
-    } // FOO=bar
-    if (LEADING_WRAPPERS.has(t)) {
-      i++
-      continue
-    }
-    break
-  }
-  const raw = tokens[i] ?? ""
-  return (raw.split(/[\\/]/).pop() ?? "").toLowerCase()
+  const tokens = shellTokens(commandText)
+  return base(tokens[commandIndex(tokens)] ?? "")
 }
 
 /** Comms channel for a single command, or null if it is not an outward-comms command.
@@ -92,7 +172,7 @@ export function detectCommand(commandText: string, depth = 0): string | null {
   const cmd = commandName(commandText)
   if (cmd in COMMS_BINARIES) return COMMS_BINARIES[cmd]
 
-  const tokens = commandText.trim().split(/\s+/)
+  const tokens = shellTokens(commandText)
   // `chat send ...` — the `chat` CLI with a send subcommand.
   if (cmd === "chat" && tokens.slice(1, 4).includes("send")) return "Chat send"
   // curl, but only when it targets a known chat/webhook endpoint.
@@ -106,7 +186,7 @@ export function detectCommand(commandText: string, depth = 0): string | null {
   // top-level name is a shell, so scan the inline script's own commands. Bounded
   // recursion guards against nested wrappers without unbounded work.
   if (depth < MAX_WRAPPER_DEPTH && SHELL_INTERPRETERS.has(cmd) && hasInlineScriptFlag(tokens)) {
-    const inner = extractInlineScript(commandText, tokens)
+    const inner = extractInlineScript(tokens)
     if (inner) {
       for (const segment of splitShellSegments(inner)) {
         const channel = detectCommand(segment, depth + 1)
@@ -130,9 +210,9 @@ export function detectComms(patterns: string[]): { channel: string } | null {
 function unwrapShell(commandText: string): string | null {
   const cmd = commandName(commandText)
   if (!SHELL_INTERPRETERS.has(cmd)) return null
-  const tokens = commandText.trim().split(/\s+/)
+  const tokens = shellTokens(commandText)
   if (!hasInlineScriptFlag(tokens)) return null
-  return extractInlineScript(commandText, tokens)
+  return extractInlineScript(tokens)
 }
 
 /**

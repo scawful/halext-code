@@ -16,6 +16,9 @@ describe("commandName", () => {
   test("relative path -> basename", () => expect(commandName("./gchat send")).toBe("gchat"))
   test("skips leading env assignment", () => expect(commandName("GCHAT_TOKEN=abc gchat post")).toBe("gchat"))
   test("skips sudo wrapper", () => expect(commandName("sudo sendmail -t")).toBe("sendmail"))
+  test("skips sudo flags before shell", () => expect(commandName("sudo -E bash -lc 'gchat post \"x\"'")).toBe("bash"))
+  test("skips quoted env assignments before shell", () =>
+    expect(commandName("env GCHAT_TOKEN='abc def' bash -lc 'gchat post \"x\"'")).toBe("bash"))
 })
 
 describe("detectCommand", () => {
@@ -45,6 +48,10 @@ describe("detectCommand", () => {
     expect(detectCommand("zsh -c 'ls -la; gchat post \"y\"'")).toBe("Google Chat"))
   test("flags sendmail behind env + bash wrapper", () =>
     expect(detectCommand("env bash -lc 'sendmail -t < body.txt'")).toBe("Email"))
+  test("flags gchat behind sudo flags + bash wrapper", () =>
+    expect(detectCommand("sudo -E bash -lc 'gchat post \"hi\"'")).toBe("Google Chat"))
+  test("flags gchat behind quoted env assignment + bash wrapper", () =>
+    expect(detectCommand("env GCHAT_TOKEN='abc def' bash -lc 'gchat post \"hi\"'")).toBe("Google Chat"))
   test("flags a webhook curl inside a shell wrapper", () =>
     expect(detectCommand("bash -c 'curl https://hooks.slack.com/services/X -d @-'")).toBe("Webhook (curl)"))
   test("flags an afs self-approval inside a shell wrapper", () =>
@@ -74,6 +81,10 @@ describe("detectComms (per-request, over parsed command list)", () => {
   test("catches a comms command wrapped in bash -lc (the reported bypass)", () => {
     expect(detectComms(["bash -lc 'gchat post \"hi\"'"])?.channel).toBe("Google Chat")
   })
+  test("catches a comms command wrapped in sudo/env shell layers", () => {
+    expect(detectComms(["sudo -E bash -lc 'gchat post \"hi\"'"])?.channel).toBe("Google Chat")
+    expect(detectComms(["env GCHAT_TOKEN='abc def' bash -lc 'gchat post \"hi\"'"])?.channel).toBe("Google Chat")
+  })
 })
 
 describe("permission.ask hook contract", () => {
@@ -93,6 +104,15 @@ describe("permission.ask hook contract", () => {
     expect(output.status).toBe("ask")
     expect(input.metadata.comms_guardrail.channel).toBe("Google Chat")
     expect(input.metadata.comms_guardrail.draft).toBe("deploy starting")
+  })
+  test("escalates sudo/env wrapped comms commands and still parses the draft", async () => {
+    const sudo = await runHook("bash", ["sudo -E bash -lc 'gchat post \"deploy starting\"'"])
+    expect(sudo.output.status).toBe("ask")
+    expect(sudo.input.metadata.comms_guardrail.draft).toBe("deploy starting")
+
+    const env = await runHook("bash", ["env GCHAT_TOKEN='abc def' bash -lc 'gchat post \"deploy starting\"'"])
+    expect(env.output.status).toBe("ask")
+    expect(env.input.metadata.comms_guardrail.draft).toBe("deploy starting")
   })
   test("leaves ordinary commands untouched", async () => {
     const { input, output } = await runHook("bash", ["ls -la"])
