@@ -34,6 +34,26 @@ describe("detectCommand", () => {
   test("flags afs approvals execute", () =>
     expect(detectCommand("afs work approvals execute 42")).toBe("AFS approval execute"))
   test("does NOT flag other afs commands", () => expect(detectCommand("afs work approvals list")).toBeNull())
+
+  // Shell-wrapper bypass: a comms command hidden inside `bash -lc '...'` etc. must
+  // still be detected — argv[0] is the shell, not the comms binary.
+  test("flags gchat inside bash -lc", () =>
+    expect(detectCommand("bash -lc 'gchat post \"hi\"'")).toBe("Google Chat"))
+  test("flags gchat inside sh -c (double-quoted script)", () =>
+    expect(detectCommand('sh -c "gchat send"')).toBe("Google Chat"))
+  test("flags gchat as a non-leading command in a shell script", () =>
+    expect(detectCommand("zsh -c 'ls -la; gchat post \"y\"'")).toBe("Google Chat"))
+  test("flags sendmail behind env + bash wrapper", () =>
+    expect(detectCommand("env bash -lc 'sendmail -t < body.txt'")).toBe("Email"))
+  test("flags a webhook curl inside a shell wrapper", () =>
+    expect(detectCommand("bash -c 'curl https://hooks.slack.com/services/X -d @-'")).toBe("Webhook (curl)"))
+  test("flags an afs self-approval inside a shell wrapper", () =>
+    expect(detectCommand("sh -c 'afs work approvals approve 42 --by human'")).toBe("AFS approval execute"))
+  // Fail-safe direction only: a benign shell wrapper must NOT be flagged.
+  test("does NOT flag a benign shell wrapper", () =>
+    expect(detectCommand("bash -lc 'ls -la && git status'")).toBeNull())
+  test("does NOT flag a shell running a script file (no -c inline)", () =>
+    expect(detectCommand("bash deploy.sh gchat")).toBeNull())
 })
 
 describe("detectComms (per-request, over parsed command list)", () => {
@@ -51,6 +71,9 @@ describe("detectComms (per-request, over parsed command list)", () => {
   test("does not false-positive on gchat inside a quoted string only", () => {
     expect(detectComms(['echo "gchat is a tool"'])).toBeNull()
   })
+  test("catches a comms command wrapped in bash -lc (the reported bypass)", () => {
+    expect(detectComms(["bash -lc 'gchat post \"hi\"'"])?.channel).toBe("Google Chat")
+  })
 })
 
 describe("permission.ask hook contract", () => {
@@ -64,6 +87,12 @@ describe("permission.ask hook contract", () => {
     const { input, output } = await runHook("bash", ["gchat post-file /tmp/body.bin"])
     expect(output.status).toBe("ask")
     expect(input.metadata.comms_guardrail.draft).toContain("could not parse")
+  })
+  test("escalates a bash -lc wrapped comms command and still parses the draft", async () => {
+    const { input, output } = await runHook("bash", ["bash -lc 'gchat post \"deploy starting\"'"])
+    expect(output.status).toBe("ask")
+    expect(input.metadata.comms_guardrail.channel).toBe("Google Chat")
+    expect(input.metadata.comms_guardrail.draft).toBe("deploy starting")
   })
   test("leaves ordinary commands untouched", async () => {
     const { input, output } = await runHook("bash", ["ls -la"])
