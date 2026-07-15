@@ -23,3 +23,7 @@ command or AFS CLI flow instead of inventing tool calls.
 Review findings first, ordered by severity. Then include assumptions, missing
 verification, and the smallest useful follow-up. Treat a built-but-stale index
 as a freshness advisory for search-heavy work, not as a default failure.
+
+When the caller asks for structured review output, shape it to the AFS
+`review-findings` schema (`afs schema show review-findings`) and validate via
+`/afs-schema` before handing it off.

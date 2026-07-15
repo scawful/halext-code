@@ -13,6 +13,9 @@ Rules:
 
 - Follow the returned first step. Usually that means cheap status, then a
   targeted query/read only if prior state is actually needed.
+- If prior state matters, also check active durable missions cheaply:
+
+  `~/src/lab/afs/scripts/afs mission list --path . --status active --limit 5 --json`
 - Prefer `/afs-brief` only if the user wants a fuller workspace brief.
 - Do not call task, handoff, memory, repair, freshness, or pack MCP tools unless
   the router or user explicitly routes there.

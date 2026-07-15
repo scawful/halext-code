@@ -20,3 +20,7 @@ Run one verification command at a time. Do not edit code. If a check fails,
 report the failing surface, the smallest next diagnostic, and whether the
 failure looks related to the current change. If a check cannot run, report the
 exact blocker and residual risk.
+
+When the caller asks for structured verification output, shape it to the AFS
+`verification-summary` schema (`afs schema show verification-summary`) and
+validate via `/afs-schema` before handing it off.

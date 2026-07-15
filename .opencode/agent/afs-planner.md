@@ -28,3 +28,9 @@ recommend the repo-local slash command or AFS CLI path instead:
 
 Keep plans concise. Include the goal, evidence already checked, blockers or
 unknowns, files likely touched, and the fastest useful verification.
+
+When the caller asks for a structured or machine-readable plan, shape it to
+the AFS `implementation-plan` schema (`afs schema show implementation-plan`)
+and validate with
+`~/src/lab/afs/scripts/afs schema validate --schema implementation-plan --file <plan.json>`
+before handing it off.
