@@ -23,4 +23,6 @@ exact blocker and residual risk.
 
 When the caller asks for structured verification output, shape it to the AFS
 `verification-summary` schema (`afs schema show verification-summary`) and
-validate via `/afs-schema` before handing it off.
+validate it directly with
+`~/src/lab/afs/scripts/afs schema validate --schema verification-summary --file <verification.json>`
+before handing it off.

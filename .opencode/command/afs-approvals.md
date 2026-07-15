@@ -14,14 +14,17 @@ Rules:
 
 - Session grounding may already mention pending approvals; use this command to
   see the full request detail before acting.
-- Approve or reject ONLY when the user explicitly directs it for a specific
-  request:
+- Approve or reject ONLY when the user explicitly directs it for the exact
+  `(agent, action)` pair shown by the listing:
 
-  `~/src/lab/afs/scripts/afs approvals approve <request-id>`
-  `~/src/lab/afs/scripts/afs approvals reject <request-id>`
+  `~/src/lab/afs/scripts/afs approvals approve <agent> <action>`
+  `~/src/lab/afs/scripts/afs approvals reject <agent> <action>`
 
 - Never approve a request as a side effect of another task, and never approve
   your own agent's outward-facing action; that defeats the gate.
+- This command manages the global agent guardrail store. Workspace-scoped
+  external-write approvals use `afs work approvals ... --path .` and approval
+  IDs instead; do not mix the two stores or identifier formats.
 - For past decisions use
   `~/src/lab/afs/scripts/afs approvals history --json`.
 - Do not assume an `approvals.*` MCP tool exists; this flow is CLI-only.

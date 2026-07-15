@@ -16,7 +16,7 @@ Rules:
 
 - For one mission's full state:
 
-  `~/src/lab/afs/scripts/afs mission show --path . <mission-id> --json`
+  `~/src/lab/afs/scripts/afs mission show --path . <mission-id>`
 
 - Create a mission only for work that outlives this session and has a clear
   owner and next step:

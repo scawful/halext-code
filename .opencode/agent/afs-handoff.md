@@ -23,5 +23,7 @@ with the full AFS catalog. Do not call `session_pack` unless the user asked for
 an export packet.
 
 When the caller asks for a structured handoff payload, shape it to the AFS
-`handoff-summary` schema (`afs schema show handoff-summary`) and validate via
-`/afs-schema` before handing it off.
+`handoff-summary` schema (`afs schema show handoff-summary`) and validate it
+directly with
+`~/src/lab/afs/scripts/afs schema validate --schema handoff-summary --file <handoff.json>`
+before handing it off.
