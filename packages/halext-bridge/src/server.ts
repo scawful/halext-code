@@ -6,9 +6,11 @@ import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { z } from "zod"
 import type { AfsApproval, AfsBootstrapSummary, AfsContextPack, AfsHealthSummary, AfsMission } from "./index"
 
-const DEFAULT_AFS_CLI = process.env.AFS_CLI ?? "/Users/scawful/src/lab/afs/scripts/afs"
+const DEFAULT_AFS_CLI = "/Users/scawful/src/lab/afs/scripts/afs"
 const DEFAULT_PROJECT_PATH = process.env.HALEXT_BRIDGE_DEFAULT_PATH ?? resolve(import.meta.dir, "../../..")
 const DEFAULT_PORT = Number(process.env.HALEXT_BRIDGE_PORT ?? "4319")
+export const DEFAULT_BRIDGE_HOST = "127.0.0.1"
+const TERMINATION_GRACE_MS = 1_000
 
 const SummaryQuerySchema = z.object({
   path: z.string().optional(),
@@ -168,9 +170,31 @@ function allowedOrigin(input?: string) {
   return undefined
 }
 
-async function runAfsJson<T>(args: string[], options?: { timeoutMs?: number }) {
+function afsCli() {
+  return process.env.AFS_CLI?.trim() || DEFAULT_AFS_CLI
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+async function terminate(proc: ReturnType<typeof Bun.spawn>) {
+  try {
+    proc.kill("SIGTERM")
+  } catch {}
+
+  const exited = await Promise.race([proc.exited.then(() => true), wait(TERMINATION_GRACE_MS).then(() => false)])
+  if (exited) return
+
+  try {
+    proc.kill("SIGKILL")
+  } catch {}
+  await Promise.race([proc.exited, wait(TERMINATION_GRACE_MS)])
+}
+
+export async function runAfsJson<T>(args: string[], options?: { timeoutMs?: number }) {
   const proc = Bun.spawn({
-    cmd: [DEFAULT_AFS_CLI, ...args],
+    cmd: [afsCli(), ...args],
     stdout: "pipe",
     stderr: "pipe",
     env: process.env,
@@ -182,23 +206,25 @@ async function runAfsJson<T>(args: string[], options?: { timeoutMs?: number }) {
 
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined
 
+  let exitCode: number | undefined
   try {
-    await Promise.race([
+    exitCode = await Promise.race([
       proc.exited,
-      new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(() => {
-          try {
-            proc.kill()
-          } catch {}
-          reject(new BridgeError(`AFS command timed out after ${timeoutMs}ms`, 504))
-        }, timeoutMs)
+      new Promise<undefined>((resolve) => {
+        timeoutHandle = setTimeout(() => resolve(undefined), timeoutMs)
       }),
     ])
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle)
   }
 
-  const [exitCode, stdout, stderr] = await Promise.all([proc.exited, stdoutPromise, stderrPromise])
+  if (exitCode === undefined) {
+    await terminate(proc)
+    void Promise.allSettled([stdoutPromise, stderrPromise])
+    throw new BridgeError(`AFS command timed out after ${timeoutMs}ms`, 504)
+  }
+
+  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise])
 
   if (exitCode !== 0) {
     throw new BridgeError(stderr.trim() || stdout.trim() || "AFS command failed", 502, stderr || stdout)
@@ -209,6 +235,10 @@ async function runAfsJson<T>(args: string[], options?: { timeoutMs?: number }) {
   } catch {
     throw new BridgeError("AFS returned non-JSON output", 502, stdout || stderr)
   }
+}
+
+export function approvalArgs(status?: z.infer<typeof ApprovalQuerySchema>["status"]) {
+  return ["approvals", status === "pending" ? "list" : "history", "--json"]
 }
 
 function summaryArgs(path: string, taskLimit: number, messageLimit: number) {
@@ -287,7 +317,7 @@ export const BridgeApp = new Hono()
   .get("/health", (c) =>
     c.json({
       ok: true as const,
-      afs_cli: DEFAULT_AFS_CLI,
+      afs_cli: afsCli(),
       default_path: DEFAULT_PROJECT_PATH,
       cwd: process.cwd(),
     }),
@@ -316,7 +346,7 @@ export const BridgeApp = new Hono()
   })
   .get("/api/approvals", async (c) => {
     const query = ApprovalQuerySchema.parse(c.req.query())
-    const approvals = await runAfsJson<AfsApproval[]>(["approvals", "list", "--json"], { timeoutMs: 10000 })
+    const approvals = await runAfsJson<AfsApproval[]>(approvalArgs(query.status), { timeoutMs: 10000 })
     return c.json(query.status ? approvals.filter((item) => item.status === query.status) : approvals)
   })
   .get("/api/health", async (c) => {
@@ -362,9 +392,10 @@ export const BridgeApp = new Hono()
 
 if (import.meta.main) {
   Bun.serve({
+    hostname: DEFAULT_BRIDGE_HOST,
     port: DEFAULT_PORT,
     idleTimeout: 30,
     fetch: BridgeApp.fetch,
   })
-  console.log(`halext-bridge listening on http://127.0.0.1:${DEFAULT_PORT}`)
+  console.log(`halext-bridge listening on http://${DEFAULT_BRIDGE_HOST}:${DEFAULT_PORT}`)
 }
