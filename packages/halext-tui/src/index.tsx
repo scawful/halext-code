@@ -63,6 +63,7 @@ if (values.help) {
       "  n                   Create a new session",
       "  r                   Refresh workspace and AFS summary",
       "  p                   Build an AFS session-pack preview",
+      "  h                   Run an AFS health check",
       "  Enter               Refresh the active session timeline",
       "  Esc                 Leave compose mode",
       "  Enter in composer   Send the prompt",

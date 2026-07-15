@@ -4,6 +4,7 @@ const result = await Bun.build({
   entrypoints: ["./src/index.tsx"],
   outdir: "./dist",
   target: "bun",
+  external: ["@opentui/core", "@opentui/solid"],
   plugins: [solidPlugin],
 })
 
