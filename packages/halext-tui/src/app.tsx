@@ -1,7 +1,9 @@
 import {
   createHalextBridgeClient,
+  type AfsApproval,
   type AfsBootstrapSummary,
   type AfsContextPack,
+  type AfsMission,
   type AfsTask,
 } from "@halext/bridge"
 import {
@@ -422,6 +424,8 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
   const [mcpEntries, setMcpEntries] = createSignal<McpEntry[]>([])
   const [afsSummary, setAfsSummary] = createSignal<AfsBootstrapSummary | null>(null)
   const [afsPack, setAfsPack] = createSignal<AfsContextPack | null>(null)
+  const [afsMissions, setAfsMissions] = createSignal<AfsMission[]>([])
+  const [afsApprovals, setAfsApprovals] = createSignal<AfsApproval[]>([])
   const [draftPrompt, setDraftPrompt] = createSignal("")
   const [statusText, setStatusText] = createSignal("Starting halext-tui...")
   const [errorText, setErrorText] = createSignal("")
@@ -526,19 +530,24 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
     const fallback = stillSelected ?? nextSessions[0]
     setSelectedSessionID(fallback?.id ?? "")
 
-    try {
-      if (activePath()) {
-        const summary = await bridgeClient().getSummary({
-          path: directory ?? fallback?.directory ?? nextProjects[0]?.worktree,
-          taskLimit: 8,
-          messageLimit: 3,
-        })
-        setAfsSummary(summary)
+    if (activePath()) {
+      const path = directory ?? fallback?.directory ?? nextProjects[0]?.worktree
+      const [summaryResult, missionResult, approvalResult] = await Promise.allSettled([
+        bridgeClient().getSummary({ path, taskLimit: 8, messageLimit: 3 }),
+        bridgeClient().getMissions({ path, status: "active", limit: 5 }),
+        bridgeClient().getApprovals({ status: "pending" }),
+      ])
+      if (summaryResult.status === "fulfilled") {
+        setAfsSummary(summaryResult.value)
       } else {
-        setAfsSummary(null)
+        setErrorText(explainError(summaryResult.reason))
       }
-    } catch (error) {
-      setErrorText(explainError(error))
+      setAfsMissions(missionResult.status === "fulfilled" ? missionResult.value : [])
+      setAfsApprovals(approvalResult.status === "fulfilled" ? approvalResult.value : [])
+    } else {
+      setAfsSummary(null)
+      setAfsMissions([])
+      setAfsApprovals([])
     }
 
     setStatusText(
@@ -700,6 +709,18 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
     }
   }
 
+  async function checkAfsHealth() {
+    setStatusText("Running AFS health check...")
+    try {
+      const health = await bridgeClient().getHealth()
+      const worst = health.scores.filter((score) => score.status === "critical").slice(0, 2)
+      const detail = worst.length > 0 ? ` Critical: ${worst.map((score) => score.metric).join(", ")}.` : ""
+      setStatusText(`AFS health ${health.overall_status} (${Math.round(health.overall_score * 100)}%).${detail}`)
+    } catch (error) {
+      setErrorText(explainError(error))
+    }
+  }
+
   useKeyboard((evt) => {
     if (evt.ctrl && evt.name === "c") {
       evt.preventDefault()
@@ -739,6 +760,11 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
     if (evt.name === "p") {
       evt.preventDefault()
       void buildPackPreview()
+      return
+    }
+    if (evt.name === "h") {
+      evt.preventDefault()
+      void checkAfsHealth()
       return
     }
     if (evt.name === "i") {
@@ -798,6 +824,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
         <text fg={palette.muted}>n new</text>
         <text fg={palette.muted}>r refresh</text>
         <text fg={palette.muted}>p pack</text>
+        <text fg={palette.muted}>h health</text>
       </box>
 
       <box flexDirection="row" flexGrow={1} minHeight={0} paddingTop={1} gap={1}>
@@ -951,6 +978,38 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
                   </box>
                 )}
               </Show>
+            </Show>
+            <Show when={afsMissions().length > 0}>
+              <box flexDirection="column" paddingTop={1}>
+                <text fg={palette.accent} attributes={TextAttributes.BOLD}>
+                  Missions
+                </text>
+                <For each={afsMissions().slice(0, 3)}>
+                  {(mission) => (
+                    <box flexDirection="column">
+                      <text fg={mission.status === "blocked" ? palette.warning : palette.text}>
+                        {truncate(`${mission.title} (${mission.status})`, 36)}
+                      </text>
+                      <Show when={mission.next_steps[0]}>
+                        <text fg={palette.muted}>{truncate(`next: ${mission.next_steps[0]}`, 36)}</text>
+                      </Show>
+                    </box>
+                  )}
+                </For>
+              </box>
+            </Show>
+            <Show when={afsApprovals().length > 0}>
+              <box flexDirection="column" paddingTop={1}>
+                <text fg={palette.warning} attributes={TextAttributes.BOLD}>
+                  Approvals pending {afsApprovals().length}
+                </text>
+                <For each={afsApprovals().slice(0, 3)}>
+                  {(item) => (
+                    <text fg={palette.text}>{truncate(`${item.agent}: ${item.action}`, 36)}</text>
+                  )}
+                </For>
+                <text fg={palette.muted}>resolve via afs approvals CLI</text>
+              </box>
             </Show>
           </Panel>
         </Show>

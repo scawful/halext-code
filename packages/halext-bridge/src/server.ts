@@ -4,7 +4,7 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { z } from "zod"
-import type { AfsBootstrapSummary, AfsContextPack } from "./index"
+import type { AfsApproval, AfsBootstrapSummary, AfsContextPack, AfsHealthSummary, AfsMission } from "./index"
 
 const DEFAULT_AFS_CLI = process.env.AFS_CLI ?? "/Users/scawful/src/lab/afs/scripts/afs"
 const DEFAULT_PROJECT_PATH = process.env.HALEXT_BRIDGE_DEFAULT_PATH ?? resolve(import.meta.dir, "../../..")
@@ -24,6 +24,16 @@ const PackQuerySchema = z.object({
   max_query_results: z.coerce.number().int().min(0).max(25).optional(),
   max_embedding_results: z.coerce.number().int().min(0).max(10).optional(),
   timeout_ms: z.coerce.number().int().min(1000).max(120000).optional(),
+})
+
+const MissionQuerySchema = z.object({
+  path: z.string().optional(),
+  status: z.enum(["active", "blocked", "done", "abandoned"]).optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+})
+
+const ApprovalQuerySchema = z.object({
+  status: z.enum(["pending", "approved", "rejected"]).optional(),
 })
 
 const FsListQuerySchema = z.object({
@@ -296,6 +306,22 @@ export const BridgeApp = new Hono()
       timeoutMs: query.timeout_ms ?? 60000,
     })
     return c.json(pack)
+  })
+  .get("/api/missions", async (c) => {
+    const query = MissionQuerySchema.parse(c.req.query())
+    const args = ["mission", "list", "--json", "--path", resolveProjectPath(query.path), "--limit", String(query.limit ?? 20)]
+    if (query.status) args.push("--status", query.status)
+    const missions = await runAfsJson<AfsMission[]>(args, { timeoutMs: 10000 })
+    return c.json(missions)
+  })
+  .get("/api/approvals", async (c) => {
+    const query = ApprovalQuerySchema.parse(c.req.query())
+    const approvals = await runAfsJson<AfsApproval[]>(["approvals", "list", "--json"], { timeoutMs: 10000 })
+    return c.json(query.status ? approvals.filter((item) => item.status === query.status) : approvals)
+  })
+  .get("/api/health", async (c) => {
+    const health = await runAfsJson<AfsHealthSummary>(["health", "status", "--json"], { timeoutMs: 20000 })
+    return c.json(health)
   })
   .get("/api/fs/list", async (c) => {
     const query = FsListQuerySchema.parse(c.req.query())

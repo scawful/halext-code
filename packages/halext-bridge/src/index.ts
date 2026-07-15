@@ -26,6 +26,54 @@ export type AfsHandoffPacket = {
 
 export type AfsLatestHandoff = ({ available: true } & AfsHandoffPacket) | { available: false }
 
+export type AfsMission = {
+  mission_id: string
+  title: string
+  status: string
+  created_at: string
+  updated_at: string
+  summary: string
+  owner: string
+  next_steps: string[]
+  blockers: string[]
+  linked_sessions: string[]
+  linked_handoffs: string[]
+  tags: string[]
+  log: Array<Record<string, unknown>>
+  metadata: Record<string, unknown>
+  schema_version: string
+}
+
+export type AfsApproval = {
+  agent: string
+  action: string
+  detail: string
+  timestamp: string
+  status: string
+  reviewed_by: string
+  reviewed_at: string
+}
+
+export type AfsHealthScore = {
+  category: string
+  metric: string
+  score: number
+  status: string
+  message: string
+  timestamp: string
+  details?: Record<string, unknown>
+}
+
+export type AfsHealthSummary = {
+  check_level: string
+  timestamp: string
+  overall_score: number
+  overall_status: string
+  duration_ms: number
+  scores: AfsHealthScore[]
+  [key: string]: unknown
+}
+
 export type AfsStatusSummary = {
   context_root?: string
   linked_root?: string
@@ -124,6 +172,16 @@ export type PackParams = {
   maxQueryResults?: number
   maxEmbeddingResults?: number
   timeoutMs?: number
+}
+
+export type MissionListParams = {
+  path?: string
+  status?: "active" | "blocked" | "done" | "abandoned"
+  limit?: number
+}
+
+export type ApprovalListParams = {
+  status?: "pending" | "approved" | "rejected"
 }
 
 export type FsListParams = {
@@ -230,6 +288,21 @@ export function createHalextBridgeClient(options?: { baseUrl?: string }) {
         max_embedding_results: params.maxEmbeddingResults,
         timeout_ms: params.timeoutMs,
       })
+    },
+    getMissions(params: MissionListParams = {}) {
+      return requestJson<AfsMission[]>(baseUrl, "/api/missions", {
+        path: params.path,
+        status: params.status,
+        limit: params.limit,
+      })
+    },
+    getApprovals(params: ApprovalListParams = {}) {
+      return requestJson<AfsApproval[]>(baseUrl, "/api/approvals", {
+        status: params.status,
+      })
+    },
+    getHealth() {
+      return requestJson<AfsHealthSummary>(baseUrl, "/api/health")
     },
     getFsList(params: FsListParams = {}) {
       return requestJson<FsListResult>(baseUrl, "/api/fs/list", {
