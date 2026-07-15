@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
-import { approvals, context, COUNT, missions } from "../../src/cli/cmd/tui/routes/session/sidebar-afs-data"
+import { approvals, context, COUNT, missions, snapshot } from "../../src/cli/cmd/tui/routes/session/sidebar-afs-data"
 import { tmpdir } from "../fixture/fixture"
 
 describe("sidebar AFS data", () => {
@@ -21,18 +21,35 @@ describe("sidebar AFS data", () => {
     expect(context(tmp.path)).toBeUndefined()
   })
 
-  test("accepts only complete visible mission records", () => {
+  test("accepts complete mission arrays and rejects malformed arrays", () => {
     expect(
       missions([
         { mission_id: "one", title: "First", status: "active", next_steps: ["Continue"] },
         { mission_id: "two", title: "Second", status: "blocked", next_steps: [] },
-        { mission_id: "", title: "Missing ID", status: "active", next_steps: [] },
-        { mission_id: "three", title: "Wrong status", status: "done", next_steps: [] },
       ]),
     ).toEqual([
-      { mission_id: "one", title: "First", status: "active", next_steps: ["Continue"] },
       { mission_id: "two", title: "Second", status: "blocked", next_steps: [] },
+      { mission_id: "one", title: "First", status: "active", next_steps: ["Continue"] },
     ])
+    expect(missions([])).toEqual([])
+    expect(
+      missions([
+        { mission_id: "one", title: "First", status: "active", next_steps: [] },
+        { mission_id: "", title: "Missing ID", status: "active", next_steps: [] },
+      ]),
+    ).toBeUndefined()
+    expect(missions({ mission_id: "one" })).toBeUndefined()
+  })
+
+  test("prioritizes blocked missions before applying the display limit", () => {
+    expect(
+      missions([
+        { mission_id: "one", title: "First", status: "active", next_steps: [] },
+        { mission_id: "two", title: "Second", status: "active", next_steps: [] },
+        { mission_id: "three", title: "Third", status: "active", next_steps: [] },
+        { mission_id: "blocked", title: "Blocked", status: "blocked", next_steps: [] },
+      ])?.map((mission) => mission.mission_id),
+    ).toEqual(["blocked", "one", "two"])
   })
 
   test("validates and caps pending approval counts", () => {
@@ -42,9 +59,42 @@ describe("sidebar AFS data", () => {
       status: "pending",
     }))
     pending.push({ agent: "reviewer", action: "deploy", status: "approved" })
-    pending.push({ agent: "", action: "deploy", status: "pending" })
 
     expect(approvals(pending)).toEqual({ count: COUNT, capped: true })
-    expect(approvals({ status: "pending" })).toEqual({ count: 0, capped: false })
+    expect(approvals([])).toEqual({ count: 0, capped: false })
+    expect(approvals([...pending, { agent: "", action: "deploy", status: "pending" }])).toBeUndefined()
+    expect(approvals({ status: "pending" })).toBeUndefined()
+  })
+
+  test("retains last-known attention data and distinguishes a new unavailable workspace", () => {
+    const known = snapshot("/one", undefined, {
+      missions: [{ mission_id: "one", title: "First", status: "active", next_steps: [] }],
+      approvals: { count: 2, capped: false },
+    })
+    const stale = snapshot("/one", known, {})
+    const unavailable = snapshot("/two", stale, {})
+
+    expect(stale.missions).toEqual(known.missions)
+    expect(stale.approvals).toEqual(known.approvals)
+    expect(stale.stale).toBe(true)
+    expect(stale.unavailable).toBe(false)
+    expect(unavailable.missions).toEqual([])
+    expect(unavailable.unavailable).toBe(true)
+  })
+
+  test("keeps last-known attention data when parser validation fails", () => {
+    const known = snapshot("/one", undefined, {
+      missions: [{ mission_id: "one", title: "First", status: "active", next_steps: [] }],
+      approvals: { count: 2, capped: false },
+    })
+    const stale = snapshot("/one", known, {
+      missions: missions([{ mission_id: "", title: "Broken", status: "active", next_steps: [] }]),
+      approvals: approvals([{ agent: "", action: "deploy", status: "pending" }]),
+    })
+
+    expect(stale.missions).toEqual(known.missions)
+    expect(stale.approvals).toEqual(known.approvals)
+    expect(stale.stale).toBe(true)
+    expect(stale.unavailable).toBe(false)
   })
 })

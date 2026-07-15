@@ -17,8 +17,19 @@ Rules:
 - Approve or reject ONLY when the user explicitly directs it for the exact
   `(agent, action)` pair shown by the listing:
 
-  `~/src/lab/afs/scripts/afs approvals approve <agent> <action>`
-  `~/src/lab/afs/scripts/afs approvals reject <agent> <action>`
+  First inspect the installed CLI contract:
+
+  `~/src/lab/afs/scripts/afs approvals approve --help`
+  `~/src/lab/afs/scripts/afs approvals reject --help`
+
+  If it supports or requires `--because`, ask the human for the exact rationale
+  and pass it before the positional pair:
+
+  `~/src/lab/afs/scripts/afs approvals approve --because "<human rationale>" -- <agent> <action>`
+  `~/src/lab/afs/scripts/afs approvals reject --because "<human rationale>" -- <agent> <action>`
+
+  For an older CLI without `--because`, use the same commands without that
+  option. Never invent, infer, or paraphrase a human rationale.
 
 - Never approve a request as a side effect of another task, and never approve
   your own agent's outward-facing action; that defeats the gate.

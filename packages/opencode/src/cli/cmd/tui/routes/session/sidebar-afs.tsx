@@ -2,7 +2,7 @@ import { createMemo, createResource, For, onCleanup, Show } from "solid-js"
 import { Process } from "@/util/process"
 import { useTheme } from "../../context/theme"
 import { useSync } from "../../context/sync"
-import { approvals, BYTES, context, missions } from "./sidebar-afs-data"
+import { approvals, BYTES, context, missions, snapshot, type Snapshot } from "./sidebar-afs-data"
 
 // Fork-owned AFS sidebar section. Reads project-management signals (open
 // missions, pending approvals) straight from the AFS CLI so it works without
@@ -12,22 +12,24 @@ import { approvals, BYTES, context, missions } from "./sidebar-afs-data"
 
 const REFRESH_MS = 120_000
 
+type Result = { ok: true; value: unknown } | { ok: false }
+
 function cli() {
   return process.env["AFS_BIN"]?.trim() || process.env["AFS_CLI"]?.trim() || "afs"
 }
 
-async function json(args: string[], signal: AbortSignal): Promise<unknown> {
+async function json(args: string[], signal: AbortSignal): Promise<Result> {
   const result = await Process.run([cli(), ...args], {
     nothrow: true,
     abort: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     timeout: 1_000,
   }).catch(() => undefined)
-  if (!result || result.code !== 0) return undefined
-  if (result.stdout.byteLength > BYTES) return undefined
+  if (!result || result.code !== 0) return { ok: false }
+  if (result.stdout.byteLength > BYTES) return { ok: false }
   try {
-    return JSON.parse(result.stdout.toString()) as unknown
+    return { ok: true, value: JSON.parse(result.stdout.toString()) as unknown }
   } catch {
-    return undefined
+    return { ok: false }
   }
 }
 
@@ -37,13 +39,14 @@ async function load(dir: string, signal: AbortSignal) {
     json(["mission", "list", "--path", dir, "--status", "blocked", "--limit", "3", "--json"], signal),
     json(["approvals", "list", "--json"], signal),
   ])
+  const activeData = activeMissions.ok ? missions(activeMissions.value) : undefined
+  const blockedData = blockedMissions.ok ? missions(blockedMissions.value) : undefined
+  const missionData = activeData && blockedData ? missions([...activeData, ...blockedData]) : undefined
+  const approvalData = pending.ok ? approvals(pending.value) : undefined
   return {
     dir,
-    missions: missions([
-      ...(Array.isArray(activeMissions) ? activeMissions : []),
-      ...(Array.isArray(blockedMissions) ? blockedMissions : []),
-    ]),
-    approvals: approvals(pending),
+    missions: missionData,
+    approvals: approvalData,
   }
 }
 
@@ -52,17 +55,27 @@ export function SidebarAfs() {
   const sync = useSync()
   const directory = createMemo(() => sync.data.path.directory || process.cwd())
   let active: AbortController | undefined
+  let last: Snapshot | undefined
   const [state, { refetch }] = createResource(directory, async (dir) => {
     active?.abort()
     const next = new AbortController()
     active = next
     if (!context(dir)) {
       active = undefined
-      return { dir, enabled: false, missions: [], approvals: { count: 0, capped: false } }
+      last = undefined
+      return {
+        ...snapshot(dir, undefined, { missions: [], approvals: { count: 0, capped: false } }),
+        enabled: false,
+      }
     }
     const result = await load(dir, next.signal)
-    if (active === next) active = undefined
-    return { ...result, enabled: true }
+    if (active !== next) return { ...snapshot(dir, undefined, result), enabled: true }
+    active = undefined
+    last = snapshot(dir, last, result)
+    return {
+      ...last,
+      enabled: true,
+    }
   })
   const timer = setInterval(() => {
     void refetch()
@@ -76,11 +89,21 @@ export function SidebarAfs() {
   const pending = createMemo(() => data()?.approvals ?? { count: 0, capped: false })
 
   return (
-    <Show when={data()?.enabled && (listed().length > 0 || pending().count > 0)}>
+    <Show when={data()?.enabled && (listed().length > 0 || pending().count > 0 || data()?.stale)}>
       <box>
         <text fg={theme.text}>
           <b>AFS</b>
         </text>
+        <Show when={data()?.stale}>
+          <box flexDirection="row" gap={1}>
+            <text flexShrink={0} fg={theme.warning}>
+              •
+            </text>
+            <text fg={theme.warning} wrapMode="word">
+              {data()?.unavailable ? "attention unavailable" : "attention stale; showing last known"}
+            </text>
+          </box>
+        </Show>
         <For each={listed()}>
           {(mission) => (
             <box flexDirection="row" gap={1}>

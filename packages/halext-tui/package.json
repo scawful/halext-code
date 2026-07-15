@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src/theme.test.ts",
+    "test": "bun test src/*.test.ts",
     "dev": "bun src/index.tsx",
     "start": "bun src/index.tsx",
     "build": "bun run ./build.ts && bun dist/index.js --help >/dev/null"
