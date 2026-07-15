@@ -1,28 +1,14 @@
-import { existsSync } from "node:fs"
-import { join } from "node:path"
 import { createMemo, createResource, For, onCleanup, Show } from "solid-js"
 import { Process } from "@/util/process"
 import { useTheme } from "../../context/theme"
-import { useDirectory } from "../../context/directory"
+import { useSync } from "../../context/sync"
+import { approvals, BYTES, context, missions } from "./sidebar-afs-data"
 
 // Fork-owned AFS sidebar section. Reads project-management signals (active
 // missions, pending approvals) straight from the AFS CLI so it works without
 // the halext bridge running. Renders nothing unless the workspace has a
-// .context directory and the CLI returns data — plain upstream behavior
-// everywhere else.
-
-type Mission = {
-  mission_id: string
-  title: string
-  status: string
-  next_steps: string[]
-}
-
-type Approval = {
-  agent: string
-  action: string
-  status: string
-}
+// .context directory exists at or above the workspace and the CLI returns
+// data — plain upstream behavior everywhere else.
 
 const REFRESH_MS = 120_000
 
@@ -30,49 +16,68 @@ function cli() {
   return process.env["AFS_BIN"]?.trim() || process.env["AFS_CLI"]?.trim() || "afs"
 }
 
-async function loadJson<T>(args: string[]): Promise<T | undefined> {
+async function json(args: string[], signal: AbortSignal): Promise<unknown> {
   const result = await Process.run([cli(), ...args], {
     nothrow: true,
-    abort: AbortSignal.timeout(10_000),
+    abort: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    timeout: 1_000,
   }).catch(() => undefined)
   if (!result || result.code !== 0) return undefined
+  if (result.stdout.byteLength > BYTES) return undefined
   try {
-    return JSON.parse(result.stdout.toString()) as T
+    return JSON.parse(result.stdout.toString()) as unknown
   } catch {
     return undefined
   }
 }
 
-async function load(directory: string) {
-  const [missions, approvals] = await Promise.all([
-    loadJson<Mission[]>(["mission", "list", "--path", directory, "--status", "active", "--limit", "3", "--json"]),
-    loadJson<Approval[]>(["approvals", "list", "--json"]),
+async function load(dir: string, signal: AbortSignal) {
+  const [listed, pending] = await Promise.all([
+    json(["mission", "list", "--path", dir, "--status", "active", "--limit", "3", "--json"], signal),
+    json(["approvals", "list", "--json"], signal),
   ])
   return {
-    missions: missions ?? [],
-    approvals: (approvals ?? []).filter((item) => item.status === "pending"),
+    dir,
+    missions: missions(listed),
+    approvals: approvals(pending),
   }
 }
 
 export function SidebarAfs() {
   const { theme } = useTheme()
-  const directory = useDirectory()
-  const enabled = createMemo(() => existsSync(join(directory(), ".context")))
-  const [state, { refetch }] = createResource(() => (enabled() ? directory() : undefined), load)
+  const sync = useSync()
+  const directory = createMemo(() => sync.data.path.directory || process.cwd())
+  let active: AbortController | undefined
+  const [state, { refetch }] = createResource(directory, async (dir) => {
+    active?.abort()
+    const next = new AbortController()
+    active = next
+    if (!context(dir)) {
+      active = undefined
+      return { dir, enabled: false, missions: [], approvals: { count: 0, capped: false } }
+    }
+    const result = await load(dir, next.signal)
+    if (active === next) active = undefined
+    return { ...result, enabled: true }
+  })
   const timer = setInterval(() => {
-    if (enabled()) void refetch()
+    void refetch()
   }, REFRESH_MS)
-  onCleanup(() => clearInterval(timer))
-  const missions = createMemo(() => state.latest?.missions ?? [])
-  const approvals = createMemo(() => state.latest?.approvals ?? [])
+  onCleanup(() => {
+    clearInterval(timer)
+    active?.abort()
+  })
+  const data = createMemo(() => (state.latest?.dir === directory() ? state.latest : undefined))
+  const listed = createMemo(() => data()?.missions ?? [])
+  const pending = createMemo(() => data()?.approvals ?? { count: 0, capped: false })
 
   return (
-    <Show when={enabled() && (missions().length > 0 || approvals().length > 0)}>
+    <Show when={data()?.enabled && (listed().length > 0 || pending().count > 0)}>
       <box>
         <text fg={theme.text}>
           <b>AFS</b>
         </text>
-        <For each={missions()}>
+        <For each={listed()}>
           {(mission) => (
             <box flexDirection="row" gap={1}>
               <text flexShrink={0} fg={mission.status === "blocked" ? theme.warning : theme.success}>
@@ -84,13 +89,14 @@ export function SidebarAfs() {
             </box>
           )}
         </For>
-        <Show when={approvals().length > 0}>
+        <Show when={pending().count > 0}>
           <box flexDirection="row" gap={1}>
             <text flexShrink={0} fg={theme.warning}>
               •
             </text>
             <text fg={theme.text} wrapMode="word">
-              {approvals().length} approval{approvals().length === 1 ? "" : "s"} pending{" "}
+              {pending().count}
+              {pending().capped ? "+" : ""} approval{pending().count === 1 ? "" : "s"} pending{" "}
               <span style={{ fg: theme.textMuted }}>resolve via afs approvals</span>
             </text>
           </box>
