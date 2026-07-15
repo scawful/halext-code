@@ -28,7 +28,12 @@ Recommended AFS commands in this mode:
 - `/afs-optimize`
 - `/afs-pack`
 
-## 2) Halext Workbench (AFS operator surface)
+## 2) Halext Workbench (AFS operator surface, deprioritized)
+
+Status: on ice. The terminal surfaces (`hcode` sidebar and halext-tui) now
+cover the AFS dashboard role with fewer moving parts — the workbench needs
+both the bridge and an opencode server running to be useful. It still works,
+but new AFS features land in the terminal surfaces first.
 
 Use this when you want a dashboard-like lane for sessions plus AFS context
 state, with file browsing and previews.
@@ -110,6 +115,6 @@ to your Ghostty config and restart Ghostty.
 ## Which one to pick?
 
 - **Coding + tool calls**: `hcode`
-- **AFS dashboard + explorer (browser)**: workbench + bridge
 - **AFS dashboard in the terminal**: halext-tui
+- **AFS dashboard + explorer (browser, deprioritized)**: workbench + bridge
 - **Visual polish**: custom TUI theme + Ghostty override
