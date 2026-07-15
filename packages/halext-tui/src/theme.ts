@@ -67,5 +67,5 @@ function resolve(data: ThemeData, value: unknown, mode: "dark" | "light", seen: 
 export function color(data: ThemeData, key: string, mode: "dark" | "light" = "dark") {
   const value = data.theme[key]
   if (value === undefined) throw new Error(`Theme color ${key} was not found`)
-  return resolve(data, value, mode, new Set([key]))
+  return resolve(data, value, mode, new Set())
 }

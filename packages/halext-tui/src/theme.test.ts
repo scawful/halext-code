@@ -37,6 +37,12 @@ describe("theme colors", () => {
     expect(() => color({ defs: { one: "two", two: "one" }, theme: { bad: "one" } }, "bad")).toThrow("Circular")
   })
 
+  test("allows a definition to share the requested theme key", () => {
+    expect(ints(color({ defs: { background: "#123456" }, theme: { background: "background" } }, "background"))).toEqual([
+      18, 52, 86, 255,
+    ])
+  })
+
   test("keeps the Ghostty profile aligned with shared key colors", async () => {
     const profile = await readFile(resolve(import.meta.dir, "../../../ghostty/hcode-ghostty.conf"), "utf8")
     expect(profile).toContain(`background = ${hcodeGhostty.defs.bg0}`)
