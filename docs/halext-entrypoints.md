@@ -70,6 +70,8 @@ terminal: sessions, timeline, and a live AFS lane side by side.
   handoff, active missions, pending approvals, and an optional pack preview
 - Keys: `j/k` select session, `i` compose, `n` new session, `r` refresh,
   `p` pack preview, `h` AFS health check, `q` quit
+- Palette: derived from `.opencode/themes/hcode-ghostty.json` at build time,
+  so the cockpit matches the primary hcode TUI and the Ghostty profile
 
 The approvals section is display-only. Resolving an approval stays a
 deliberate CLI step (`afs approvals approve|reject`) on explicit user

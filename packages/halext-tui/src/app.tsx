@@ -18,6 +18,7 @@ import {
 import { RGBA, TextAttributes, type TextareaRenderable } from "@opentui/core"
 import { useKeyboard, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { For, Show, createEffect, createMemo, createSignal, onMount, type ParentProps } from "solid-js"
+import hcodeGhostty from "../../../.opencode/themes/hcode-ghostty.json"
 
 type HalextTuiAppProps = {
   serverUrl: string
@@ -60,17 +61,26 @@ type PartBlock = {
   tone: RGBA
 }
 
+// Theme values are def names ("blue") or raw hex; resolve through defs first.
+const defs: Record<string, string> = hcodeGhostty.defs
+
+function themed(value: string) {
+  return RGBA.fromHex(defs[value] ?? value)
+}
+
+const theme = hcodeGhostty.theme
+
 const palette = {
-  background: RGBA.fromHex("#0f1115"),
-  panel: RGBA.fromHex("#151922"),
-  panelAlt: RGBA.fromHex("#10141b"),
-  border: RGBA.fromHex("#2d3440"),
-  accent: RGBA.fromHex("#d89a59"),
-  text: RGBA.fromHex("#f1efe8"),
-  muted: RGBA.fromHex("#93a0ac"),
-  success: RGBA.fromHex("#7ec699"),
-  warning: RGBA.fromHex("#e4b363"),
-  error: RGBA.fromHex("#e07a7a"),
+  background: themed(theme.background),
+  panel: themed(theme.backgroundPanel),
+  panelAlt: themed(theme.backgroundElement),
+  border: themed(theme.border),
+  accent: themed(theme.primary),
+  text: themed(theme.text),
+  muted: themed(theme.textMuted),
+  success: themed(theme.success),
+  warning: themed(theme.warning),
+  error: themed(theme.error),
 } as const
 
 function formatDate(timestamp?: number | string) {
