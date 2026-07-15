@@ -178,7 +178,7 @@ function wait(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-async function terminate(proc: ReturnType<typeof Bun.spawn>) {
+export async function terminate(proc: ReturnType<typeof Bun.spawn>) {
   try {
     proc.kill("SIGTERM")
   } catch {}

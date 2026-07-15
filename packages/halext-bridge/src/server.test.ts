@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { BridgeApp, DEFAULT_BRIDGE_HOST, approvalArgs, runAfsJson } from "./server"
+import { BridgeApp, DEFAULT_BRIDGE_HOST, approvalArgs, runAfsJson, terminate } from "./server"
 
 const originalCli = process.env.AFS_CLI
 const paths: string[] = []
@@ -62,7 +62,18 @@ test("the bridge defaults to loopback", () => {
   expect(DEFAULT_BRIDGE_HOST).toBe("127.0.0.1")
 })
 
-test("timeouts escalate to a forced process termination", async () => {
+test("timeouts return a bounded gateway error", async () => {
+  await fakeCli(`
+process.on("SIGTERM", () => {})
+setInterval(() => {}, 1_000)
+`)
+
+  const started = performance.now()
+  await expect(runAfsJson([], { timeoutMs: 100 })).rejects.toThrow("AFS command timed out after 100ms")
+  expect(performance.now() - started).toBeLessThan(2_500)
+})
+
+test("termination escalates after the child reports ready", async () => {
   const directory = await fakeCli(`
 process.on("SIGTERM", () => {})
 await Bun.write(process.env.FAKE_PID_PATH, String(process.pid))
@@ -70,11 +81,16 @@ setInterval(() => {}, 1_000)
 `)
   const pidPath = join(directory, "pid")
   process.env.FAKE_PID_PATH = pidPath
+  const proc = Bun.spawn({ cmd: [process.env.AFS_CLI!], stdout: "ignore", stderr: "ignore", env: process.env })
 
-  const started = performance.now()
-  await expect(runAfsJson([], { timeoutMs: 25 })).rejects.toThrow("AFS command timed out after 25ms")
-  expect(performance.now() - started).toBeLessThan(2_500)
+  let pid: number | undefined
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    pid = Number(await readFile(pidPath, "utf8").catch(() => "")) || undefined
+    if (pid !== undefined) break
+    await Bun.sleep(10)
+  }
+  expect(pid).toBeDefined()
 
-  const pid = Number(await readFile(pidPath, "utf8"))
-  expect(() => process.kill(pid, 0)).toThrow()
+  await terminate(proc)
+  expect(() => process.kill(pid!, 0)).toThrow()
 })

@@ -534,9 +534,10 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
 
     if (activePath()) {
       const path = directory ?? fallback?.directory ?? nextProjects[0]?.worktree
-      const [summaryResult, missionResult, approvalResult] = await Promise.allSettled([
+      const [summaryResult, activeMissionResult, blockedMissionResult, approvalResult] = await Promise.allSettled([
         bridgeClient().getSummary({ path, taskLimit: 8, messageLimit: 3 }),
         bridgeClient().getMissions({ path, status: "active", limit: 5 }),
+        bridgeClient().getMissions({ path, status: "blocked", limit: 5 }),
         bridgeClient().getApprovals({ status: "pending" }),
       ])
       if (summaryResult.status === "fulfilled") {
@@ -544,7 +545,10 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       } else {
         setErrorText(explainError(summaryResult.reason))
       }
-      setAfsMissions(missionResult.status === "fulfilled" ? missionResult.value : [])
+      setAfsMissions([
+        ...(activeMissionResult.status === "fulfilled" ? activeMissionResult.value : []),
+        ...(blockedMissionResult.status === "fulfilled" ? blockedMissionResult.value : []),
+      ])
       setAfsApprovals(approvalResult.status === "fulfilled" ? approvalResult.value : [])
     } else {
       setAfsSummary(null)

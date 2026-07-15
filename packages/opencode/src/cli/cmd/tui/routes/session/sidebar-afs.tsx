@@ -4,7 +4,7 @@ import { useTheme } from "../../context/theme"
 import { useSync } from "../../context/sync"
 import { approvals, BYTES, context, missions } from "./sidebar-afs-data"
 
-// Fork-owned AFS sidebar section. Reads project-management signals (active
+// Fork-owned AFS sidebar section. Reads project-management signals (open
 // missions, pending approvals) straight from the AFS CLI so it works without
 // the halext bridge running. Renders nothing unless the workspace has a
 // .context directory exists at or above the workspace and the CLI returns
@@ -32,13 +32,17 @@ async function json(args: string[], signal: AbortSignal): Promise<unknown> {
 }
 
 async function load(dir: string, signal: AbortSignal) {
-  const [listed, pending] = await Promise.all([
+  const [activeMissions, blockedMissions, pending] = await Promise.all([
     json(["mission", "list", "--path", dir, "--status", "active", "--limit", "3", "--json"], signal),
+    json(["mission", "list", "--path", dir, "--status", "blocked", "--limit", "3", "--json"], signal),
     json(["approvals", "list", "--json"], signal),
   ])
   return {
     dir,
-    missions: missions(listed),
+    missions: missions([
+      ...(Array.isArray(activeMissions) ? activeMissions : []),
+      ...(Array.isArray(blockedMissions) ? blockedMissions : []),
+    ]),
     approvals: approvals(pending),
   }
 }
