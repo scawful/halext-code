@@ -6,13 +6,20 @@ import { BridgeApp, DEFAULT_BRIDGE_HOST, approvalArgs, runAfsJson, terminate } f
 
 const originalCli = process.env.AFS_CLI
 const paths: string[] = []
+const signalTest = process.platform === "win32" ? test.skip : test
 
 async function fakeCli(source: string) {
   const directory = await mkdtemp(join(tmpdir(), "halext-bridge-test-"))
-  const path = join(directory, "afs")
+  const script = join(directory, "afs.ts")
+  const path = process.platform === "win32" ? join(directory, "afs.cmd") : join(directory, "afs")
   paths.push(directory)
-  await writeFile(path, `#!/usr/bin/env bun\n${source}\n`, "utf8")
-  await chmod(path, 0o755)
+  await writeFile(script, `${source}\n`, "utf8")
+  if (process.platform === "win32") {
+    await writeFile(path, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`, "utf8")
+  } else {
+    await writeFile(path, `#!/usr/bin/env bun\n${source}\n`, "utf8")
+    await chmod(path, 0o755)
+  }
   process.env.AFS_CLI = path
   return directory
 }
@@ -62,7 +69,7 @@ test("the bridge defaults to loopback", () => {
   expect(DEFAULT_BRIDGE_HOST).toBe("127.0.0.1")
 })
 
-test("timeouts return a bounded gateway error", async () => {
+signalTest("timeouts return a bounded gateway error", async () => {
   await fakeCli(`
 process.on("SIGTERM", () => {})
 setInterval(() => {}, 1_000)
@@ -73,7 +80,7 @@ setInterval(() => {}, 1_000)
   expect(performance.now() - started).toBeLessThan(2_500)
 })
 
-test("termination escalates after the child reports ready", async () => {
+signalTest("termination escalates after the child reports ready", async () => {
   const directory = await fakeCli(`
 process.on("SIGTERM", () => {})
 await Bun.write(process.env.FAKE_PID_PATH, String(process.pid))
