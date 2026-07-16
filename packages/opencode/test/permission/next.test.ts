@@ -1,5 +1,7 @@
 import { test, expect } from "bun:test"
 import os from "os"
+import path from "path"
+import { pathToFileURL } from "url"
 import { Bus } from "../../src/bus"
 import { runtime } from "../../src/effect/runtime"
 import { PermissionNext } from "../../src/permission/next"
@@ -19,13 +21,31 @@ async function rejectAll(message?: string) {
   }
 }
 
-async function waitForPending(count: number) {
-  for (let i = 0; i < 20; i++) {
+async function waitForPending(count: number, timeout = 4_000) {
+  const end = Date.now() + timeout
+  do {
     const list = await PermissionNext.list()
     if (list.length === count) return list
-    await Bun.sleep(0)
-  }
+    await Bun.sleep(10)
+  } while (Date.now() < end)
   return PermissionNext.list()
+}
+
+async function tmpWithPermissionPlugin(source: string) {
+  return tmpdir({
+    git: true,
+    init: async (dir) => {
+      const plugin = path.join(dir, "permission-plugin.ts")
+      await Bun.write(plugin, source)
+      await Bun.write(
+        path.join(dir, "opencode.json"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          plugin: [pathToFileURL(plugin).href],
+        }),
+      )
+    },
+  })
 }
 
 // fromConfig tests
@@ -478,6 +498,232 @@ test("disabled - specific allow overrides wildcard deny", () => {
   expect(result.has("read")).toBe(true)
 })
 
+// plugin permission tests
+
+test("ask - plugin escalates allow without a later downgrade and preserves metadata", async () => {
+  await using tmp = await tmpWithPermissionPlugin(`
+    export const first = async () => ({
+      "permission.ask": async (input, output) => {
+        input.metadata.preview = "review before sending"
+        output.status = "ask"
+      },
+    })
+    export const second = async () => ({
+      "permission.ask": async (_input, output) => {
+        output.status = "allow"
+      },
+    })
+  `)
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      let seen: PermissionNext.Request | undefined
+      const unsub = Bus.subscribe(PermissionNext.Event.Asked, (event) => {
+        seen = event.properties
+      })
+      const ask = PermissionNext.ask({
+        id: PermissionID.make("per_plugin_ask"),
+        sessionID: SessionID.make("session_plugin_ask"),
+        permission: "bash",
+        patterns: ["send-message"],
+        metadata: {},
+        always: [],
+        ruleset: [{ permission: "bash", pattern: "*", action: "allow" }],
+      })
+
+      try {
+        const list = await waitForPending(1)
+        expect(list).toHaveLength(1)
+        expect(list[0].metadata).toEqual({ preview: "review before sending" })
+        expect(seen?.metadata).toEqual({ preview: "review before sending" })
+
+        await PermissionNext.reply({ requestID: PermissionID.make("per_plugin_ask"), reply: "once" })
+        await expect(ask).resolves.toBeUndefined()
+      } finally {
+        unsub()
+        await rejectAll()
+        await ask.catch(() => {})
+      }
+    },
+  })
+}, 30_000)
+
+test("ask - plugin deny cannot be downgraded by a later hook", async () => {
+  await using tmp = await tmpWithPermissionPlugin(`
+    export const first = async () => ({
+      "permission.ask": async (_input, output) => {
+        output.status = "deny"
+      },
+    })
+    export const second = async () => ({
+      "permission.ask": async () => {
+        throw new Error("later hook failed")
+      },
+    })
+  `)
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      await expect(
+        PermissionNext.ask({
+          sessionID: SessionID.make("session_plugin_deny"),
+          permission: "bash",
+          patterns: ["send-message"],
+          metadata: {},
+          always: [],
+          ruleset: [{ permission: "bash", pattern: "*", action: "allow" }],
+        }),
+      ).rejects.toBeInstanceOf(PermissionNext.DeniedError)
+      expect(await PermissionNext.list()).toHaveLength(0)
+    },
+  })
+}, 30_000)
+
+test("ask - plugin cannot downgrade an evaluated ask", async () => {
+  await using tmp = await tmpWithPermissionPlugin(`
+    export default async () => ({
+      "permission.ask": async (_input, output) => {
+        output.status = "allow"
+      },
+    })
+  `)
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const ask = PermissionNext.ask({
+        id: PermissionID.make("per_plugin_no_downgrade"),
+        sessionID: SessionID.make("session_plugin_no_downgrade"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: [],
+        ruleset: [{ permission: "bash", pattern: "*", action: "ask" }],
+      })
+
+      try {
+        expect(await waitForPending(1)).toHaveLength(1)
+      } finally {
+        await rejectAll()
+        await ask.catch(() => {})
+      }
+    },
+  })
+}, 30_000)
+
+test("ask - failed plugin hook is isolated and later hooks still run", async () => {
+  await using tmp = await tmpWithPermissionPlugin(`
+    export const first = async () => ({
+      "permission.ask": async (_input, output) => {
+        output.status = "deny"
+        throw new Error("hook failed")
+      },
+    })
+    export const second = async () => ({
+      "permission.ask": async (input) => {
+        input.metadata.later = true
+      },
+    })
+  `)
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const ask = PermissionNext.ask({
+        id: PermissionID.make("per_plugin_error"),
+        sessionID: SessionID.make("session_plugin_error"),
+        permission: "bash",
+        patterns: ["send-message"],
+        metadata: {},
+        always: [],
+        ruleset: [{ permission: "bash", pattern: "*", action: "allow" }],
+      })
+
+      try {
+        const list = await waitForPending(1)
+        expect(list).toHaveLength(1)
+        expect(list[0].metadata).toEqual({ later: true })
+      } finally {
+        await rejectAll()
+        await ask.catch(() => {})
+      }
+    },
+  })
+}, 30_000)
+
+test("ask - failed plugin initialization makes bash fail closed", async () => {
+  await using tmp = await tmpWithPermissionPlugin(`
+    export default async () => {
+      throw new Error("plugin initialization failed")
+    }
+  `)
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const ask = PermissionNext.ask({
+        id: PermissionID.make("per_plugin_init_error"),
+        sessionID: SessionID.make("session_plugin_init_error"),
+        permission: "bash",
+        patterns: ["gchat post hi"],
+        metadata: {},
+        always: [],
+        ruleset: [{ permission: "bash", pattern: "*", action: "allow" }],
+      })
+
+      try {
+        expect(await waitForPending(1)).toHaveLength(1)
+      } finally {
+        await rejectAll()
+        await ask.catch(() => {})
+      }
+    },
+  })
+}, 30_000)
+
+test("reply - always preserves a concurrent plugin-gated request", async () => {
+  await using tmp = await tmpWithPermissionPlugin(`
+    export default async () => ({
+      "permission.ask": async (input, output) => {
+        if (input.metadata.guarded) output.status = "ask"
+      },
+    })
+  `)
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const base = PermissionNext.ask({
+        id: PermissionID.make("per_plugin_base"),
+        sessionID: SessionID.make("session_plugin_always"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: ["ls"],
+        ruleset: [{ permission: "bash", pattern: "*", action: "ask" }],
+      })
+      const guarded = PermissionNext.ask({
+        id: PermissionID.make("per_plugin_guarded"),
+        sessionID: SessionID.make("session_plugin_always"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: { guarded: true },
+        always: [],
+        ruleset: [],
+      })
+
+      try {
+        expect(await waitForPending(2)).toHaveLength(2)
+        await PermissionNext.reply({ requestID: PermissionID.make("per_plugin_base"), reply: "always" })
+        await expect(base).resolves.toBeUndefined()
+        expect((await PermissionNext.list()).map((item) => item.id)).toEqual([PermissionID.make("per_plugin_guarded")])
+
+        await PermissionNext.reply({ requestID: PermissionID.make("per_plugin_guarded"), reply: "once" })
+        await expect(guarded).resolves.toBeUndefined()
+      } finally {
+        await rejectAll()
+        await Promise.all([base.catch(() => {}), guarded.catch(() => {})])
+      }
+    },
+  })
+}, 30_000)
+
 // ask tests
 
 test("ask - resolves immediately when action is allow", async () => {
@@ -532,6 +778,7 @@ test("ask - returns pending promise when action is ask", async () => {
       })
       // Promise should be pending, not resolved
       expect(promise).toBeInstanceOf(Promise)
+      expect(await waitForPending(1)).toHaveLength(1)
       // Don't await - just verify it returns a promise
       await rejectAll()
       await promise.catch(() => {})
@@ -557,7 +804,7 @@ test("ask - adds request to pending list", async () => {
         ruleset: [],
       })
 
-      const list = await PermissionNext.list()
+      const list = await waitForPending(1)
       expect(list).toHaveLength(1)
       expect(list[0]).toMatchObject({
         sessionID: SessionID.make("session_test"),
@@ -600,7 +847,7 @@ test("ask - publishes asked event", async () => {
         ruleset: [],
       })
 
-      expect(await PermissionNext.list()).toHaveLength(1)
+      expect(await waitForPending(1)).toHaveLength(1)
       expect(seen).toBeDefined()
       expect(seen).toMatchObject({
         sessionID: SessionID.make("session_test"),

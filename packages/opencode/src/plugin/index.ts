@@ -15,6 +15,11 @@ import { gitlabAuthPlugin as GitlabAuthPlugin } from "@gitlab/opencode-gitlab-au
 
 export namespace Plugin {
   const log = Log.create({ service: "plugin" })
+  const rank = {
+    allow: 0,
+    ask: 1,
+    deny: 2,
+  } as const
 
   const BUILTIN = ["opencode-anthropic-auth@0.0.13"]
 
@@ -34,6 +39,7 @@ export namespace Plugin {
     })
     const config = await Config.get()
     const hooks: Hooks[] = []
+    let failed = false
     const input: PluginInput = {
       client,
       project: Instance.project,
@@ -48,6 +54,7 @@ export namespace Plugin {
     for (const plugin of INTERNAL_PLUGINS) {
       log.info("loading internal plugin", { name: plugin.name })
       const init = await plugin(input).catch((err) => {
+        failed = true
         log.error("failed to load internal plugin", { name: plugin.name, error: err })
       })
       if (init) hooks.push(init)
@@ -68,6 +75,7 @@ export namespace Plugin {
         const pkg = lastAtIndex > 0 ? plugin.substring(0, lastAtIndex) : plugin
         const version = lastAtIndex > 0 ? plugin.substring(lastAtIndex + 1) : "latest"
         plugin = await BunProc.install(pkg, version).catch((err) => {
+          failed = true
           const cause = err instanceof Error ? err.cause : err
           const detail = cause instanceof Error ? cause.message : String(cause ?? err)
           log.error("failed to install plugin", { pkg, version, error: detail })
@@ -93,6 +101,7 @@ export namespace Plugin {
           }
         })
         .catch((err) => {
+          failed = true
           const message = err instanceof Error ? err.message : String(err)
           log.error("failed to load plugin", { path: plugin, error: message })
           Bus.publish(Session.Event.Error, {
@@ -105,12 +114,13 @@ export namespace Plugin {
 
     return {
       hooks,
+      failed,
       input,
     }
   })
 
   export async function trigger<
-    Name extends Exclude<keyof Required<Hooks>, "auth" | "event" | "tool">,
+    Name extends Exclude<keyof Required<Hooks>, "auth" | "event" | "tool" | "permission.ask">,
     Input = Parameters<Required<Hooks>[Name]>[0],
     Output = Parameters<Required<Hooks>[Name]>[1],
   >(name: Name, input: Input, output: Output): Promise<Output> {
@@ -124,6 +134,43 @@ export namespace Plugin {
       await fn(input, output)
     }
     return output
+  }
+
+  export async function permission(
+    input: Parameters<NonNullable<Hooks["permission.ask"]>>[0],
+    output: Parameters<NonNullable<Hooks["permission.ask"]>>[1],
+  ) {
+    let guarded = false
+    const registry = await state()
+    let failed = registry.failed
+    for (const hook of registry.hooks) {
+      const fn = hook["permission.ask"]
+      if (!fn) continue
+
+      // Give each hook an isolated decision so a failed hook cannot leak a
+      // partial mutation and a later hook cannot loosen an earlier decision.
+      let status = output.status
+      let changed = false
+      const next: typeof output = {
+        get status() {
+          return status
+        },
+        set status(value) {
+          status = value
+          changed = true
+        },
+      }
+      try {
+        await fn(input, next)
+      } catch (error) {
+        failed = true
+        log.error("permission.ask hook failed; continuing with remaining hooks", { error })
+        continue
+      }
+      if (changed && status === "ask") guarded = true
+      if (rank[status] > rank[output.status]) output.status = status
+    }
+    return { guarded, failed }
   }
 
   export async function list() {
