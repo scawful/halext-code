@@ -171,7 +171,19 @@ function skipEnv(tokens: string[], index: number): number {
       i++
       continue
     }
-    if (t.startsWith("--") && !["--ignore-environment", "--null", "--debug"].includes(t)) {
+    if (
+      t.startsWith("--") &&
+      ![
+        "--block-signal",
+        "--debug",
+        "--default-signal",
+        "--ignore-environment",
+        "--ignore-signal",
+        "--list-signal-handling",
+        "--null",
+      ].includes(t) &&
+      !/^--(?:block-signal|default-signal|ignore-signal)=/.test(t)
+    ) {
       return tokens.length
     }
     if (t.startsWith("--")) {
@@ -182,7 +194,7 @@ function skipEnv(tokens: string[], index: number): number {
     let consumed = false
     for (let option = 0; option < body.length; option++) {
       if ("0iv".includes(body[option])) continue
-      if (!"CPSu".includes(body[option])) return tokens.length
+      if (!"aCPSu".includes(body[option])) return tokens.length
       i += option + 1 < body.length ? 1 : 2
       consumed = true
       break
@@ -359,6 +371,10 @@ function envSplitString(tokens: string[], index: number): string | null {
       i++
       continue
     }
+    if (/^--(?:block-signal|default-signal|ignore-signal)(?:=.*)?$/.test(token) || token === "--list-signal-handling") {
+      i++
+      continue
+    }
     if (!token.startsWith("-") || token === "-") return null
     const body = token.slice(1)
     let consumed = false
@@ -369,7 +385,7 @@ function envSplitString(tokens: string[], index: number): string | null {
         return attached ? withTail(attached, i + 1) : withTail(tokens[i + 1], i + 2)
       }
       if ("0iv".includes(name)) continue
-      if (!"CPu".includes(name)) return null
+      if (!"aCPu".includes(name)) return null
       i += option + 1 < body.length ? 1 : 2
       consumed = true
       break
