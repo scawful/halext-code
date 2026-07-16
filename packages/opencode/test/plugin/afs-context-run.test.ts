@@ -64,6 +64,25 @@ describe("plugin.afs-context bounded runner", () => {
     expect(Date.now() - start).toBeLessThan(1_000)
   })
 
+  test.skipIf(process.platform === "win32")("terminates descendants that ignore stdio", async () => {
+    await using tmp = await tmpdir()
+    const marker = join(tmp.path, "descendant.pid")
+    const text = await run(
+      [
+        process.execPath,
+        "-e",
+        `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
+      ],
+      { timeout: 2_000, limit: 1_024 },
+    )
+
+    const pid = Number(await Bun.file(marker).text())
+    expect(pid).toBeGreaterThan(0)
+    for (let attempt = 0; attempt < 20 && processIsAlive(pid); attempt++) await Bun.sleep(50)
+    expect(processIsAlive(pid)).toBeFalse()
+    expect(text).toBeNull()
+  })
+
   test.skipIf(process.platform !== "win32")(
     "terminates an inherited-stdout descendant after its direct parent exits",
     async () => {

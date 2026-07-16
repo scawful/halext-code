@@ -5,9 +5,9 @@ export type RunOptions = {
   limit: number
 }
 
-type WindowsDescendantCleanup = "clean" | "descendants" | "error"
+type DescendantCleanup = "clean" | "descendants" | "error"
 
-function cleanupWindowsDescendants(pid: number): Promise<WindowsDescendantCleanup> {
+function cleanupWindowsDescendants(pid: number): Promise<DescendantCleanup> {
   const script = `
 $ErrorActionPreference = 'Stop'
 $rootPid = [uint32]${pid}
@@ -45,7 +45,7 @@ exit 42
     }
 
     let settled = false
-    const finish = (result: WindowsDescendantCleanup) => {
+    const finish = (result: DescendantCleanup) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
@@ -61,7 +61,7 @@ exit 42
   })
 }
 
-function terminateWindows(proc: ChildProcess, pid: number, cleanupDescendants: () => Promise<WindowsDescendantCleanup>) {
+function terminateWindows(proc: ChildProcess, pid: number, cleanupDescendants: () => Promise<DescendantCleanup>) {
   // taskkill handles the ordinary case while the parent is still alive. A direct
   // child can exit before our timeout while one of its children keeps inherited
   // stdout open, though; taskkill cannot root a tree at that dead PID. Snapshot
@@ -81,7 +81,7 @@ function terminateWindows(proc: ChildProcess, pid: number, cleanupDescendants: (
   fallback.unref()
 }
 
-function terminate(proc: ChildProcess, cleanupWindows?: () => Promise<WindowsDescendantCleanup>) {
+function terminate(proc: ChildProcess, cleanupWindows?: () => Promise<DescendantCleanup>) {
   const pid = proc.pid
   if (!pid) {
     proc.kill("SIGKILL")
@@ -97,6 +97,22 @@ function terminate(proc: ChildProcess, cleanupWindows?: () => Promise<WindowsDes
     process.kill(-pid, "SIGKILL")
   } catch {
     proc.kill("SIGKILL")
+  }
+}
+
+function cleanupUnixProcessGroup(pid: number): DescendantCleanup {
+  try {
+    process.kill(-pid, 0)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") return "clean"
+    return "error"
+  }
+
+  try {
+    process.kill(-pid, "SIGKILL")
+    return "descendants"
+  } catch {
+    return "error"
   }
 }
 
@@ -126,7 +142,7 @@ export function run(cmd: string[], opts: RunOptions): Promise<string | null> {
     let size = 0
     let failed = false
     let settled = false
-    let windowsCleanup: Promise<WindowsDescendantCleanup> | undefined
+    let windowsCleanup: Promise<DescendantCleanup> | undefined
     const cleanupWindows = () => (windowsCleanup ??= cleanupWindowsDescendants(proc.pid!))
 
     const finish = (value: string | null) => {
@@ -162,8 +178,15 @@ export function run(cmd: string[], opts: RunOptions): Promise<string | null> {
     proc.once("close", (code) => {
       if (settled) return
       const value = !failed && code === 0 ? Buffer.concat(chunks).toString().trim() : null
-      if (process.platform !== "win32" || !proc.pid) {
+      if (!proc.pid) {
         finish(value)
+        return
+      }
+      if (process.platform !== "win32") {
+        // A daemonized child can close or ignore the captured streams and let
+        // its direct parent exit cleanly. Drain the detached process group
+        // before reporting success so it cannot outlive this bounded call.
+        finish(cleanupUnixProcessGroup(proc.pid) === "clean" ? value : null)
         return
       }
 
