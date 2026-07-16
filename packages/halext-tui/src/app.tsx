@@ -434,6 +434,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
   let packAbort: AbortController | undefined
   let seen = [false, false, false]
   let attentionError = ""
+  let healthError = ""
 
   const [projects, setProjects] = createSignal<Project[]>([])
   const [sessions, setSessions] = createSignal<GlobalSession[]>([])
@@ -513,7 +514,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       setAfsAttention(path ? "unavailable" : "ready")
     }
     if (!path) {
-      const state = refreshError(attentionError, errorText(), "")
+      const state = refreshError(attentionError, errorText(), "", healthError)
       attentionError = state.owned
       if (state.visible !== errorText()) setErrorText(state.visible)
       if (attentionAbort === next) attentionAbort = undefined
@@ -541,6 +542,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
         attentionError,
         errorText(),
         summaryResult.status === "rejected" ? explainError(summaryResult.reason) : "",
+        healthError,
       )
       attentionError = state.owned
       if (state.visible !== errorText()) setErrorText(state.visible)
@@ -804,9 +806,14 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       const health = await bridgeClient().getHealth()
       const worst = health.scores.filter((score) => score.status === "critical").slice(0, 2)
       const detail = worst.length > 0 ? ` Critical: ${worst.map((score) => score.metric).join(", ")}.` : ""
+      const state = refreshError(healthError, errorText(), "", attentionError)
+      healthError = state.owned
+      if (state.visible !== errorText()) setErrorText(state.visible)
       setStatusText(`AFS health ${health.overall_status} (${Math.round(health.overall_score * 100)}%).${detail}`)
     } catch (error) {
-      setErrorText(explainError(error))
+      const state = refreshError(healthError, errorText(), explainError(error), attentionError)
+      healthError = state.owned
+      if (state.visible !== errorText()) setErrorText(state.visible)
     }
   }
 

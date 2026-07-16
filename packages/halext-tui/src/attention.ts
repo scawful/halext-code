@@ -30,7 +30,7 @@ export function availability(failed: boolean[], seen: boolean[]): Attention {
   return failed.some((value, index) => value && !seen[index]) ? "unavailable" : "stale"
 }
 
-export function refreshError(owned: string, visible: string, next: string) {
+export function refreshError(owned: string, visible: string, next: string, fallback = "") {
   if (next) {
     return {
       owned: next,
@@ -39,6 +39,6 @@ export function refreshError(owned: string, visible: string, next: string) {
   }
   return {
     owned: "",
-    visible: owned && visible === owned ? "" : visible,
+    visible: owned && visible === owned ? fallback : visible,
   }
 }

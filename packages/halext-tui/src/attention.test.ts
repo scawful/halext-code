@@ -73,4 +73,14 @@ describe("AFS attention", () => {
       visible: "Prompt failed",
     })
   })
+
+  test("restores another AFS error after a health error recovers", () => {
+    const health = refreshError("", "", "Health unavailable")
+    const attention = refreshError("", health.visible, "Attention unavailable")
+    const recovered = refreshError(health.owned, health.visible, "", attention.owned)
+
+    expect(attention).toEqual({ owned: "Attention unavailable", visible: "Health unavailable" })
+    expect(recovered).toEqual({ owned: "", visible: "Attention unavailable" })
+    expect(refreshError(attention.owned, recovered.visible, "")).toEqual({ owned: "", visible: "" })
+  })
 })
