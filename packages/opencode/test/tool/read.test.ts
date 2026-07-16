@@ -398,11 +398,16 @@ describe("tool.read truncation", () => {
   })
 
   test("large image files are properly attached without error", async () => {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "large-image.png"), Bun.file(path.join(FIXTURES_DIR, "large-image.png")))
+      },
+    })
     await Instance.provide({
-      directory: FIXTURES_DIR,
+      directory: tmp.path,
       fn: async () => {
         const read = await ReadTool.init()
-        const result = await read.execute({ filePath: path.join(FIXTURES_DIR, "large-image.png") }, ctx)
+        const result = await read.execute({ filePath: path.join(tmp.path, "large-image.png") }, ctx)
         expect(result.metadata.truncated).toBe(false)
         expect(result.attachments).toBeDefined()
         expect(result.attachments?.length).toBe(1)

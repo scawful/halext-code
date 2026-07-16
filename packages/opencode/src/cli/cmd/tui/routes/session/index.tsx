@@ -1167,8 +1167,9 @@ export function Session() {
               </For>
             </scrollbox>
             <box flexShrink={0}>
-              <Show when={permissions().length > 0}>
-                <PermissionPrompt request={permissions()[0]} />
+              {/* Remount per request so guarded option/state cannot leak across queue turnover. */}
+              <Show when={permissions()[0]} keyed>
+                {(request) => <PermissionPrompt request={request} />}
               </Show>
               <Show when={permissions().length === 0 && questions().length > 0}>
                 <QuestionPrompt request={questions()[0]} />

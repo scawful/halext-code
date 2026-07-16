@@ -8,9 +8,8 @@ import { Database, eq } from "@/storage/db"
 import { InstanceState } from "@/util/instance-state"
 import { Log } from "@/util/log"
 import { Wildcard } from "@/util/wildcard"
-import { Plugin } from "@/plugin"
 import { Deferred, Effect, Layer, Schema, ServiceMap } from "effect"
-import type { Permission } from "@opencode-ai/sdk"
+import type { PermissionRequest } from "@opencode-ai/sdk/v2"
 import z from "zod"
 import { PermissionID } from "./schema"
 
@@ -104,6 +103,7 @@ export type PermissionError = DeniedError | RejectedError | CorrectedError
 interface PendingEntry {
   info: Request
   deferred: Deferred.Deferred<void, RejectedError | CorrectedError>
+  guarded: boolean
 }
 
 type State = {
@@ -179,18 +179,32 @@ export class PermissionService extends ServiceMap.Service<PermissionService, Per
         // enrich `info.metadata` (e.g. a comms-draft preview shown in the prompt),
         // but it can never downgrade: a returned "allow" is ignored when the
         // evaluated action was already "ask", and config `deny` returned above.
-        // This is what makes the comms guardrail un-bypassable by a stale
-        // allow-always. A throwing hook keeps the evaluated decision (fail-closed
-        // for the guardrail is the plugin's own responsibility).
+        // This prevents a stale allow-always rule from bypassing a successfully
+        // loaded guard hook. Individual hook failures are isolated by Plugin so
+        // later hooks still run; any hook or registry failure makes a non-denied
+        // bash request fail closed to ask.
         const decision: { status: Action } = { status: pending ? "ask" : "allow" }
-        yield* Effect.promise(() =>
-          Plugin.trigger("permission.ask", info as unknown as Permission, decision).catch((err) => {
-            log.error("permission.ask hook failed; keeping evaluated decision", {
-              error: err instanceof Error ? err.message : String(err),
-            })
-            return decision
-          }),
+        // Load the plugin registry lazily: plugin initialization imports Session,
+        // which imports this service through PermissionNext. A static import here
+        // creates an ESM cycle and leaves PermissionNext.Action uninitialized.
+        const hook = yield* Effect.promise(() =>
+          import("@/plugin")
+            // PermissionID is string-backed at runtime; its Effect newtype is
+            // intentionally opaque to the generated SDK request type.
+            .then(({ Plugin }) => Plugin.permission(info as unknown as PermissionRequest, decision))
+            .catch((err) => {
+              const guarded = info.permission === "bash"
+              if (guarded && decision.status === "allow") decision.status = "ask"
+              log.error("permission.ask registry failed", {
+                error: err instanceof Error ? err.message : String(err),
+                fallback: decision.status,
+              })
+              return { guarded, failed: true }
+            }),
         )
+        const failed = hook.failed && info.permission === "bash"
+        if (failed && decision.status === "allow") decision.status = "ask"
+        const guarded = (hook.guarded || failed) && decision.status === "ask"
         if (decision.status === "deny") {
           return yield* new DeniedError({
             ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
@@ -203,7 +217,7 @@ export class PermissionService extends ServiceMap.Service<PermissionService, Per
         log.info("asking", { id, permission: info.permission, patterns: info.patterns })
 
         const deferred = yield* Deferred.make<void, RejectedError | CorrectedError>()
-        state.pending.set(id, { info, deferred })
+        state.pending.set(id, { info, deferred, guarded })
         void Bus.publish(Event.Asked, info)
         return yield* Effect.ensuring(
           Deferred.await(deferred),
@@ -257,6 +271,10 @@ export class PermissionService extends ServiceMap.Service<PermissionService, Per
 
         for (const [id, item] of state.pending.entries()) {
           if (item.info.sessionID !== existing.info.sessionID) continue
+          // A plugin explicitly required review for this request. It still
+          // needs its own human reply even if another request grants a matching
+          // runtime "always" rule while both are pending.
+          if (item.guarded) continue
           const ok = item.info.patterns.every(
             (pattern) => evaluate(item.info.permission, pattern, state.approved).action === "allow",
           )

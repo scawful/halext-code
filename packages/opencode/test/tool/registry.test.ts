@@ -1,11 +1,43 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
 import { tmpdir } from "../fixture/fixture"
 import { Instance } from "../../src/project/instance"
 import { ToolRegistry } from "../../src/tool/registry"
+import { BunProc } from "../../src/bun"
+
+function mockDependencyInstall() {
+  return spyOn(BunProc, "run").mockImplementation(async (_cmd, options) => {
+    const dir = options?.cwd
+    if (!dir) throw new Error("expected dependency install directory")
+
+    const moduleDir = path.join(dir, "node_modules", "cowsay")
+    await fs.mkdir(moduleDir, { recursive: true })
+    await Bun.write(
+      path.join(moduleDir, "package.json"),
+      JSON.stringify({ name: "cowsay", type: "module", exports: "./index.js" }),
+    )
+    await Bun.write(path.join(moduleDir, "index.js"), "export const say = ({ text }) => `cow: ${text}`\n")
+
+    return {
+      code: 0,
+      stdout: Buffer.alloc(0),
+      stderr: Buffer.alloc(0),
+    }
+  })
+}
 
 describe("tool.registry", () => {
+  let install: ReturnType<typeof mockDependencyInstall>
+
+  beforeEach(() => {
+    install = mockDependencyInstall()
+  })
+
+  afterEach(() => {
+    install.mockRestore()
+  })
+
   test("loads tools from .opencode/tool (singular)", async () => {
     await using tmp = await tmpdir({
       init: async (dir) => {
@@ -118,5 +150,6 @@ describe("tool.registry", () => {
         expect(ids).toContain("cowsay")
       },
     })
+    expect(install).toHaveBeenCalled()
   })
 })

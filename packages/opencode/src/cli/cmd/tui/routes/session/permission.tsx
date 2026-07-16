@@ -20,6 +20,17 @@ import { App } from "@/cli/name"
 
 type PermissionStage = "permission" | "always" | "reject"
 
+function comms(request: PermissionRequest) {
+  const raw = request.metadata?.comms_guardrail
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return
+  const gate = raw as Record<string, unknown>
+  return {
+    channel: typeof gate.channel === "string" && gate.channel ? gate.channel : "Outward communication",
+    draft: typeof gate.draft === "string" && gate.draft ? gate.draft : "Review the exact command before approving.",
+    command: typeof gate.command === "string" ? gate.command : request.patterns.join("\n"),
+  }
+}
+
 function normalizePath(input?: string) {
   if (!input) return ""
 
@@ -135,6 +146,7 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
   })
 
   const session = createMemo(() => sync.data.session.find((s) => s.id === props.request.sessionID))
+  const guard = createMemo(() => comms(props.request))
 
   const input = createMemo(() => {
     const tool = props.request.tool
@@ -158,11 +170,15 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
           body={
             <Switch>
               <Match when={props.request.always.length === 1 && props.request.always[0] === "*"}>
-                <TextBody title={"This will allow " + props.request.permission + " until " + App.title() + " is restarted."} />
+                <TextBody
+                  title={"This will allow " + props.request.permission + " until " + App.title() + " is restarted."}
+                />
               </Match>
               <Match when={true}>
                 <box paddingLeft={1} gap={1}>
-                  <text fg={theme.textMuted}>This will allow the following patterns until {App.title()} is restarted</text>
+                  <text fg={theme.textMuted}>
+                    This will allow the following patterns until {App.title()} is restarted
+                  </text>
                   <box>
                     <For each={props.request.always}>
                       {(pattern) => (
@@ -285,6 +301,22 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
               const title =
                 typeof data.description === "string" && data.description ? data.description : "Shell command"
               const command = typeof data.command === "string" ? data.command : ""
+              const gate = guard()
+              if (gate) {
+                return {
+                  icon: "!",
+                  title: `Confirm ${gate.channel}`,
+                  body: (
+                    <box paddingLeft={1} gap={1}>
+                      <text fg={theme.warning}>Exact outward communication approval required</text>
+                      <text fg={theme.textMuted}>Draft</text>
+                      <text fg={theme.text}>{gate.draft}</text>
+                      <text fg={theme.textMuted}>Command</text>
+                      <text fg={theme.text}>{"$ " + gate.command}</text>
+                    </box>
+                  ),
+                }
+              }
               return {
                 icon: "#",
                 title,
@@ -432,7 +464,11 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
               title="Permission required"
               header={header()}
               body={current.body}
-              options={{ once: "Allow once", always: "Allow always", reject: "Reject" }}
+              options={
+                guard()
+                  ? { once: "Approve draft", reject: "Reject" }
+                  : { once: "Allow once", always: "Allow always", reject: "Reject" }
+              }
               escapeKey="reject"
               fullscreen
               onSelect={(option) => {
