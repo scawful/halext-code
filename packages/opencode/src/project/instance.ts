@@ -98,9 +98,10 @@ export const Instance = {
    */
   containsPath(filepath: string) {
     if (Filesystem.contains(Instance.directory, filepath)) return true
-    // Non-git projects use the platform filesystem root as their worktree, which
-    // would match every path on that volume. Keep the directory boundary instead.
-    if (Instance.worktree === path.parse(Instance.worktree).root) return false
+    // Non-git projects use a filesystem-root sentinel as their worktree, which
+    // would match every path on that volume. A real git repository at the root
+    // remains valid and must retain its actual worktree boundary.
+    if (Instance.project.vcs !== "git" && Instance.worktree === path.parse(Instance.worktree).root) return false
     return Filesystem.contains(Instance.worktree, filepath)
   },
   state<S>(init: () => S, dispose?: (state: Awaited<S>) => Promise<void>): () => S {
