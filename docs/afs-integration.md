@@ -13,6 +13,11 @@ TypeScript rewrite.
   `.context` for AFS tools that accept `context_path`.
 - OpenCode uses the same plugin to bias the harness toward cheap AFS reads by
   default and keep `session_pack` explicit.
+- For each live session, that plugin also requests the AFS `SessionStart`
+  grounding block through `AFS_BIN`, then `AFS_CLI`, then `afs` on `PATH`. It
+  uses an argument vector rather than a shell, caps runtime at 10 seconds and
+  stdout at 32 KiB, coalesces concurrent requests, caps both cached and
+  in-flight session sets at 32, and retries failures after a 30-second backoff.
 - Project-local slash commands in `.opencode/command/` provide first-class
   `/afs-next`, `/afs-brief`, `/afs-help`, `/afs-status`, `/afs-query`, `/afs-tasks`,
   `/afs-files`, `/afs-handoff`, `/afs-handoff-create`, `/afs-review-context`,
@@ -54,6 +59,15 @@ TypeScript rewrite.
 - Keep work-writing approval-gated. `/afs-work-preflight` gathers style
   evidence and approval state, but posting/sending still needs explicit human
   approval.
+- The shell comms guardrail is a bounded defense-in-depth detector, not a proof
+  that a command cannot communicate outward. It recognizes known literal comms
+  commands, common execution wrappers, and inline shell scripts; dynamically
+  constructed commands, aliases/functions, sourced scripts, encoded payloads,
+  and arbitrary interpreter behavior remain outside its static detection scope.
+- A detected communication request is remounted as its own permission prompt,
+  shows the full command plus extracted draft, and offers only per-draft
+  approval or rejection. Runtime `allow always` rules cannot release a queued
+  guarded request.
 - Repeated matching `session_pack` calls can reuse the stored pack artifact, so
   the command remains explicit but less volatile than a full rebuild every time.
 - Treat a built-but-stale index as a refresh hint for search-heavy work, not as
@@ -101,7 +115,7 @@ TypeScript rewrite.
 9. Use `/afs-refresh` only when stale search/index freshness actually matters.
 10. Use `/afs-pack` only when you actually need a handoff/export artifact.
 11. Use `/afs-update-work` to preview/apply the AFS harness update script from a
-   work-machine checkout.
+    work-machine checkout.
 
 ## Project agents
 

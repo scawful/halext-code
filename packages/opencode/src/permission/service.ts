@@ -9,6 +9,7 @@ import { InstanceState } from "@/util/instance-state"
 import { Log } from "@/util/log"
 import { Wildcard } from "@/util/wildcard"
 import { Deferred, Effect, Layer, Schema, ServiceMap } from "effect"
+import type { PermissionRequest } from "@opencode-ai/sdk/v2"
 import z from "zod"
 import { PermissionID } from "./schema"
 
@@ -102,6 +103,7 @@ export type PermissionError = DeniedError | RejectedError | CorrectedError
 interface PendingEntry {
   info: Request
   deferred: Deferred.Deferred<void, RejectedError | CorrectedError>
+  guarded: boolean
 }
 
 type State = {
@@ -153,6 +155,9 @@ export class PermissionService extends ServiceMap.Service<PermissionService, Per
         for (const pattern of request.patterns) {
           const rule = evaluate(request.permission, pattern, ruleset, state.approved)
           log.info("evaluated", { permission: request.permission, pattern, action: rule })
+          // A config `deny` is absolute: it returns immediately, before the
+          // permission.ask plugin hook below ever runs. Plugins therefore can
+          // never loosen a deny — only escalate an allow/ask.
           if (rule.action === "deny") {
             return yield* new DeniedError({
               ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
@@ -162,17 +167,57 @@ export class PermissionService extends ServiceMap.Service<PermissionService, Per
           pending = true
         }
 
-        if (!pending) return
-
         const id = request.id ?? PermissionID.ascending()
         const info: Request = {
           id,
           ...request,
         }
+
+        // permission.ask plugin hook. Runs on EVERY request that was not denied
+        // by config — including ones a runtime "allow always" grant would auto-
+        // approve. A plugin may escalate the decision (allow -> ask/deny) and may
+        // enrich `info.metadata` (e.g. a comms-draft preview shown in the prompt),
+        // but it can never downgrade: a returned "allow" is ignored when the
+        // evaluated action was already "ask", and config `deny` returned above.
+        // This prevents a stale allow-always rule from bypassing a successfully
+        // loaded guard hook. Individual hook failures are isolated by Plugin so
+        // later hooks still run; any hook or registry failure makes a non-denied
+        // bash request fail closed to ask.
+        const decision: { status: Action } = { status: pending ? "ask" : "allow" }
+        // Load the plugin registry lazily: plugin initialization imports Session,
+        // which imports this service through PermissionNext. A static import here
+        // creates an ESM cycle and leaves PermissionNext.Action uninitialized.
+        const hook = yield* Effect.promise(() =>
+          import("@/plugin")
+            // PermissionID is string-backed at runtime; its Effect newtype is
+            // intentionally opaque to the generated SDK request type.
+            .then(({ Plugin }) => Plugin.permission(info as unknown as PermissionRequest, decision))
+            .catch((err) => {
+              const guarded = info.permission === "bash"
+              if (guarded && decision.status === "allow") decision.status = "ask"
+              log.error("permission.ask registry failed", {
+                error: err instanceof Error ? err.message : String(err),
+                fallback: decision.status,
+              })
+              return { guarded, failed: true }
+            }),
+        )
+        const failed = hook.failed && info.permission === "bash"
+        if (failed && decision.status === "allow") decision.status = "ask"
+        const guarded = (hook.guarded || failed) && decision.status === "ask"
+        if (decision.status === "deny") {
+          return yield* new DeniedError({
+            ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
+          })
+        }
+        if (decision.status === "ask") pending = true
+
+        if (!pending) return
+
         log.info("asking", { id, permission: info.permission, patterns: info.patterns })
 
         const deferred = yield* Deferred.make<void, RejectedError | CorrectedError>()
-        state.pending.set(id, { info, deferred })
+        state.pending.set(id, { info, deferred, guarded })
         void Bus.publish(Event.Asked, info)
         return yield* Effect.ensuring(
           Deferred.await(deferred),
@@ -226,6 +271,10 @@ export class PermissionService extends ServiceMap.Service<PermissionService, Per
 
         for (const [id, item] of state.pending.entries()) {
           if (item.info.sessionID !== existing.info.sessionID) continue
+          // A plugin explicitly required review for this request. It still
+          // needs its own human reply even if another request grants a matching
+          // runtime "always" rule while both are pending.
+          if (item.guarded) continue
           const ok = item.info.patterns.every(
             (pattern) => evaluate(item.info.permission, pattern, state.approved).action === "allow",
           )

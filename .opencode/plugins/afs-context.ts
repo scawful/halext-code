@@ -1,5 +1,12 @@
+import { existsSync } from "fs"
 import { isAbsolute, join } from "path"
 import type { Plugin } from "@opencode-ai/plugin"
+import { run } from "./afs-context/lib"
+
+const CACHE_LIMIT = 32
+const OUTPUT_LIMIT = 32 * 1024
+const RETRY_MS = 30_000
+const TIMEOUT_MS = 10_000
 
 const TOOLS = new Set([
   "afs_local_context_mount",
@@ -72,6 +79,19 @@ const SYSTEM_GUIDANCE = [
 export const AFSContextPlugin: Plugin = async ({ directory, worktree }) => {
   const base = worktree === "/" ? directory : worktree
   const root = join(base, ".context")
+
+  // Keep successful grounding per session. Failures get a short backoff rather
+  // than becoming permanent, and session-less transforms never shell out.
+  const grounding = new Map<string, { text: string; retry: number }>()
+  const pending = new Map<string, Promise<string | null>>()
+  const loadGrounding = async (): Promise<string | null> => {
+    if (!existsSync(root)) return null
+    const bin = process.env.AFS_BIN?.trim() || process.env.AFS_CLI?.trim() || "afs"
+    return run([bin, "claude", "hook", "--raw", "--event", "SessionStart", "--path", base], {
+      timeout: TIMEOUT_MS,
+      limit: OUTPUT_LIMIT,
+    })
+  }
   const staleNote =
     "\n\nRepo note: in this workspace, a built-but-stale index is usually a freshness advisory, not a hard failure. If mounts are healthy and the index exists, prefer normal cheap AFS reads and refresh only before search-heavy work."
   const refreshNote =
@@ -90,8 +110,39 @@ export const AFSContextPlugin: Plugin = async ({ directory, worktree }) => {
   }
 
   return {
-    "experimental.chat.system.transform": async (_, output) => {
+    "experimental.chat.system.transform": async (input, output) => {
       output.system.push([...SYSTEM_GUIDANCE, fileNote].join("\n"))
+      // Push live AFS grounding so context reaches the model without an explicit
+      // prompt (pull -> push). Appended, never prepended: llm.ts re-collapses
+      // system[1..] and preserves system[0], so the prompt-cache header is intact.
+      const sessionID = typeof input?.sessionID === "string" ? input.sessionID.trim() : ""
+      if (!sessionID) return
+      const cached = grounding.get(sessionID)
+      if (cached) {
+        grounding.delete(sessionID)
+        grounding.set(sessionID, cached)
+        if (cached.retry === 0 || cached.retry > Date.now()) {
+          if (cached.text) output.system.push(cached.text)
+          return
+        }
+      }
+
+      let task = pending.get(sessionID)
+      if (!task) {
+        if (pending.size >= CACHE_LIMIT) return
+        task = loadGrounding()
+          .catch(() => null)
+          .then((text) => {
+            pending.delete(sessionID)
+            grounding.delete(sessionID)
+            grounding.set(sessionID, { text: text ?? "", retry: text === null ? Date.now() + RETRY_MS : 0 })
+            while (grounding.size > CACHE_LIMIT) grounding.delete(grounding.keys().next().value!)
+            return text
+          })
+        pending.set(sessionID, task)
+      }
+      const text = await task
+      if (text) output.system.push(text)
     },
     "tool.execute.before": async (input, output) => {
       const args = output.args as Record<string, unknown>
