@@ -210,6 +210,13 @@ export function run(cmd: string[], opts: RunOptions): Promise<string | null> {
       failed = true
       finish(null)
     })
+    proc.once("exit", () => {
+      if (settled || process.platform !== "win32" || !proc.pid) return
+      // A descendant can keep inherited pipes open after the direct process
+      // exits, which delays `close`. Start discovery at `exit` so cleanup can
+      // drain that tree and allow the captured streams to close promptly.
+      void cleanupWindows()
+    })
     proc.once("close", (code) => {
       if (settled) return
       const value = !failed && code === 0 ? Buffer.concat(chunks).toString().trim() : null
