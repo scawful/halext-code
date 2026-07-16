@@ -10,16 +10,16 @@ Rules:
 
 - List available schema names:
 
-  `"${AFS_CLI:-afs}" schema list`
+  `"${AFS_BIN:-${AFS_CLI:-afs}}" schema list`
 
 - Print one schema before authoring a payload that must match it:
 
-  `"${AFS_CLI:-afs}" schema show <name>`
+  `"${AFS_BIN:-${AFS_CLI:-afs}}" schema show <name>`
 
 - Validate a structured payload (exit 1 on mismatch; `--json` includes a
   suggested correction):
 
-  `"${AFS_CLI:-afs}" schema validate --schema <name> --file <path> --json`
+  `"${AFS_BIN:-${AFS_CLI:-afs}}" schema validate --schema <name> --file <path> --json`
 
 - `implementation-plan` has an optional human-authored `human_intent` trust
   boundary. Agents must never create, fill, paraphrase, or edit that section.
@@ -27,7 +27,7 @@ Rules:
   an original skeleton file, preserve it and validate the expanded plan against
   that original:
 
-  `"${AFS_CLI:-afs}" schema validate --schema implementation-plan --file <plan.json> --skeleton <human-plan.json> --json`
+  `"${AFS_BIN:-${AFS_CLI:-afs}}" schema validate --schema implementation-plan --file <plan.json> --skeleton <human-plan.json> --json`
 
   Ordinary validation checks only the JSON shape; it does not prove that
   `human_intent` was preserved.

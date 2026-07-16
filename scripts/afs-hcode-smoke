@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 dir="$ROOT"
 live="${HCODE_SMOKE_LIVE:-0}"
-afs_root="${AFS_ROOT:-/Users/scawful/src/lab/afs}"
-afs_cli="${AFS_CLI:-$afs_root/scripts/afs}"
+afs_root="${AFS_ROOT:-${SC_WORKSPACE_ROOT:-$HOME/src}/lab/afs}"
+afs_cli="${AFS_BIN:-${AFS_CLI:-$afs_root/scripts/afs}}"
 
 if [[ "${1:-}" == "--live-run" ]]; then
   live="1"
@@ -75,8 +75,30 @@ require_flag "optimize decide" "--baseline" "$optimize_help"
 require_flag "optimize decide" "--candidate" "$optimize_help"
 require_flag "optimize decide" "--policy" "$optimize_help"
 
-if grep -RqsF '~/src/lab/afs/scripts/afs' "$ROOT/.opencode/command" "$ROOT/.opencode/agent"; then
-  echo "prompt-layer AFS recipes must resolve AFS_CLI instead of a fixed checkout" >&2
+if grep -RqsE '(/Users/[^/]+|~)/src/lab/afs/scripts/afs' \
+  "$ROOT/.opencode" \
+  "$ROOT/docs" \
+  "$ROOT/packages/opencode/src/session/prompt"; then
+  echo "prompt-layer AFS recipes must resolve the configured CLI instead of a fixed checkout" >&2
+  exit 1
+fi
+# This checks the literal prompt recipe rather than expanding it.
+# shellcheck disable=SC2016
+if grep -RqsF '"${AFS_CLI:-afs}"' \
+  "$ROOT/.opencode/command" \
+  "$ROOT/.opencode/agent" \
+  "$ROOT/.opencode/plugins/afs-context.ts" \
+  "$ROOT/.opencode/skills/halext-afs/SKILL.md"; then
+  echo "prompt-layer AFS recipes must honor AFS_BIN before AFS_CLI" >&2
+  exit 1
+fi
+if ! grep -Fq 'process.env.AFS_BIN?.trim() || process.env.AFS_CLI?.trim() || "afs"' \
+  "$ROOT/.opencode/plugins/afs-context.ts"; then
+  echo "AFS session grounding must honor AFS_BIN, AFS_CLI, then PATH" >&2
+  exit 1
+fi
+if ! grep -Fq '"{env:AFS_CLI}", "mcp", "serve"' "$ROOT/.opencode/opencode.jsonc"; then
+  echo "afs_local MCP must use the launcher-selected AFS_CLI" >&2
   exit 1
 fi
 if ! grep -Fq -- '--skeleton <human-plan.json>' "$ROOT/.opencode/agent/afs-planner.md"; then

@@ -3,19 +3,43 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 project_dir="${HALEXT_HCODE_DIRECTORY:-$PWD}"
+workspace_root="${SC_WORKSPACE_ROOT:-${SC_SRC_ROOT:-$HOME/src}}"
+afs_bin_override="${AFS_BIN:-}"
+afs_cli_override="${AFS_CLI:-}"
+afs_venv_was_set=0
+afs_venv_override=""
+if [[ "${AFS_VENV+x}" == "x" ]]; then
+  afs_venv_was_set=1
+  afs_venv_override="$AFS_VENV"
+fi
 
 cd "$project_dir"
 
-if [[ -f "/Users/scawful/src/scripts/agent-harness-env" ]]; then
-  # shellcheck source=/Users/scawful/src/scripts/agent-harness-env
-  source "/Users/scawful/src/scripts/agent-harness-env"
+export SC_SRC_ROOT="${SC_SRC_ROOT:-$workspace_root}"
+if [[ -f "$workspace_root/scripts/agent-harness-env" ]]; then
+  # shellcheck source=/dev/null
+  source "$workspace_root/scripts/agent-harness-env"
 fi
 
 export HALEXT_HCODE_DIRECTORY="$project_dir"
 export OPENCODE_ENABLE_EXA="${OPENCODE_ENABLE_EXA:-1}"
-export AFS_ROOT="${AFS_ROOT:-/Users/scawful/src/lab/afs}"
-export AFS_CLI="${AFS_CLI:-$AFS_ROOT/scripts/afs}"
-export AFS_VENV="${AFS_VENV:-$AFS_ROOT/.venv}"
-export SC_AGENT_HARNESS_CONTRACT="${SC_AGENT_HARNESS_CONTRACT:-/Users/scawful/src/docs/guides/ai-coder/AGENT_HARNESS_CONTRACT.md}"
+export AFS_ROOT="${AFS_ROOT:-$workspace_root/lab/afs}"
+afs_cli_from_root=0
+if [[ -n "$afs_bin_override" ]]; then
+  export AFS_CLI="$afs_bin_override"
+elif [[ -n "$afs_cli_override" ]]; then
+  export AFS_CLI="$afs_cli_override"
+else
+  export AFS_CLI="$AFS_ROOT/scripts/afs"
+  afs_cli_from_root=1
+fi
+if [[ "$afs_venv_was_set" == "1" ]]; then
+  export AFS_VENV="$afs_venv_override"
+elif [[ "$afs_cli_from_root" == "1" ]]; then
+  export AFS_VENV="$AFS_ROOT/.venv"
+else
+  unset AFS_VENV
+fi
+export SC_AGENT_HARNESS_CONTRACT="${SC_AGENT_HARNESS_CONTRACT:-$workspace_root/docs/guides/ai-coder/AGENT_HARNESS_CONTRACT.md}"
 
 exec bun --cwd "$ROOT/packages/opencode" --conditions=browser src/hcode.ts "$@"

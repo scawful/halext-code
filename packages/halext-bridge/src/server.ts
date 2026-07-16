@@ -5,7 +5,7 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { z } from "zod"
-import { parseApprovals, parseHealth, parseMissions, parseSummary, type AfsContextPack } from "./index"
+import { parseApprovals, parseHealth, parseMissions, parsePack, parseSummary } from "./index"
 
 const DEFAULT_AFS_CLI = "afs"
 const DEFAULT_PROJECT_PATH = process.env.HALEXT_BRIDGE_DEFAULT_PATH ?? resolve(import.meta.dir, "../../..")
@@ -212,6 +212,7 @@ function windows(proc: ChildProcess, pid: number) {
       stdio: "ignore",
       windowsHide: true,
     })
+    child.once("error", () => {})
     child.unref()
   } catch {}
 
@@ -243,6 +244,7 @@ foreach ($targetPid in $targets) {
       ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
       { stdio: "ignore", windowsHide: true },
     )
+    child.once("error", () => {})
     child.unref()
   } catch {}
 
@@ -455,9 +457,12 @@ export const BridgeApp = new Hono()
   })
   .get("/api/session/pack", async (c) => {
     const query = PackQuerySchema.parse(c.req.query())
-    const pack = await runAfsJson<AfsContextPack>(packArgs(query), {
-      timeoutMs: query.timeout_ms ?? 60000,
-    })
+    const pack = validate(
+      await runAfsJson<unknown>(packArgs(query), {
+        timeoutMs: query.timeout_ms ?? 60000,
+      }),
+      parsePack,
+    )
     return c.json(pack)
   })
   .get("/api/missions", async (c) => {

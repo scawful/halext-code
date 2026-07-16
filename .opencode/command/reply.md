@@ -8,11 +8,11 @@ Rules:
 
 - Run the router:
 
-  `"${AFS_CLI:-afs}" next --path . --intent work-writing --json`
+  `"${AFS_BIN:-${AFS_CLI:-afs}}" next --path . --intent work-writing --json`
 
 - Run the preflight it returns before drafting:
 
-  `"${AFS_CLI:-afs}" work communication preflight --path . --json`
+  `"${AFS_BIN:-${AFS_CLI:-afs}}" work communication preflight --path . --json`
 
 - Use the returned style evidence, missing evidence, pending approvals,
   `ready_to_post`, and `requires_explicit_approval` guardrails.

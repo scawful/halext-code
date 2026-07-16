@@ -8,7 +8,7 @@ Rules:
 
 - Run the router:
 
-  `"${AFS_CLI:-afs}" next --path . --intent verify --json`
+  `"${AFS_BIN:-${AFS_CLI:-afs}}" next --path . --intent verify --json`
 
 - Prefer the returned verification plan command before guessing tests.
 - Run one check at a time.

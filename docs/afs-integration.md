@@ -26,9 +26,15 @@ TypeScript rewrite.
   Heavier AFS behavior is reached through CLI/framework hints or an explicit
   full-catalog AFS server.
 - Project-local guidance lives in `.opencode/skills/halext-afs/SKILL.md`.
-- Prompt-layer CLI recipes resolve `"${AFS_CLI:-afs}"`; `scripts/hcode`
-  derives `AFS_CLI` from the overridable `AFS_ROOT`, while non-wrapper launches
-  can provide `AFS_CLI` directly or expose `afs` on `PATH`.
+- Prompt-layer CLI recipes resolve `"${AFS_BIN:-${AFS_CLI:-afs}}"`; `scripts/hcode`
+  derives `AFS_CLI` from `AFS_BIN`, then the overridable `AFS_ROOT`, while
+  non-wrapper launches can provide either override or expose `afs` on `PATH`.
+  When the CLI is overridden, the launcher leaves `AFS_VENV` unset unless the
+  caller supplied it explicitly, so one checkout cannot inherit another's
+  Python environment.
+  The project-local MCP command uses `AFS_CLI` directly because OpenCode config
+  interpolation has no fallback syntax; non-wrapper launches that need the MCP
+  server must set `AFS_CLI` explicitly.
 - Project-local subagents under `.opencode/agent/` provide a small visible
   AFS-aware set for context, planning, review, worker, and critic lanes.
   Specialized exact-name agents exist for advanced flows, but slash commands
@@ -92,7 +98,7 @@ TypeScript rewrite.
    - `/fixafs`: dry-run context/index repair
    - `/setupafs`: manager/setup preview
 4. Use `/afs-next <intent>` when the agent is unsure which AFS surface to use.
-   It calls `~/src/lab/afs/scripts/afs next --path . --intent <intent> --json`
+   It calls `"${AFS_BIN:-${AFS_CLI:-afs}}" next --path . --intent <intent> --json`
    and records a small route event for later measurement.
 5. Use `/afs-brief` for the cheapest combined workspace briefing, or
    `/afs-help` if you need the command menu.
@@ -130,7 +136,7 @@ Agents should use AFS in this order:
 5. `/afs-*` slash commands or AFS CLI for tasks, handoff, work preflight,
    verification, refresh, repair, and packs
 
-Use `~/src/lab/afs/scripts/afs next report --path . --json` when you want to
+Use `"${AFS_BIN:-${AFS_CLI:-afs}}" next report --path . --json` when you want to
 check whether recent agents used the funnel or bypassed it with heavy MCP
 tools.
 

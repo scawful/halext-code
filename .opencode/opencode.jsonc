@@ -61,7 +61,7 @@
     // AFS_MCP_TOOL_CATALOG=full only for explicit debug/admin sessions.
     "afs_local": {
       "type": "local",
-      "command": ["/Users/scawful/src/lab/afs/scripts/afs", "mcp", "serve"],
+      "command": ["{env:AFS_CLI}", "mcp", "serve"],
       "enabled": true,
       "timeout": 30000,
     },

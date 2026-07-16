@@ -68,5 +68,9 @@ describe("AFS attention", () => {
     expect(refreshError(failed.owned, failed.visible, "")).toEqual({ owned: "", visible: "" })
     expect(refreshError(failed.owned, "Prompt failed", "")).toEqual({ owned: "", visible: "Prompt failed" })
     expect(refreshError("", "Prompt failed", "")).toEqual({ owned: "", visible: "Prompt failed" })
+    expect(refreshError(failed.owned, "Prompt failed", "AFS still unavailable")).toEqual({
+      owned: "AFS still unavailable",
+      visible: "Prompt failed",
+    })
   })
 })

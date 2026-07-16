@@ -56,7 +56,7 @@ const MOUNTS = new Set([
 const SYSTEM_GUIDANCE = [
   "This workspace uses Python AFS through the afs_local_* MCP tools.",
   "Treat AFS as quiet workspace support by default, not as a foreground workflow.",
-  "When unsure which AFS surface to use, route first through /afs-next or `~/src/lab/afs/scripts/afs next --path . --intent <intent> --json`.",
+  'When unsure which AFS surface to use, route first through /afs-next or `"${AFS_BIN:-${AFS_CLI:-afs}}" next --path . --intent <intent> --json`.',
   "Use short workflow aliases when they fit: /start, /find, /check, /ship, /reply, /handoff, /fixafs, and /setupafs.",
   "Use the deterministic AFS discovery ladder: status -> query -> exact read/list -> scratchpad write -> named CLI/slash-command flow.",
   "The default AFS MCP catalog is intentionally slim: afs_local_context_status, afs_local_context_query, afs_local_context_read, afs_local_context_write, afs_local_context_list, afs_local_skill_match, and afs_local_skill_read.",
@@ -84,11 +84,9 @@ export const AFSContextPlugin: Plugin = async ({ directory, worktree, $ }) => {
   let grounding: { sessionID: string; text: string } | null = null
   const loadGrounding = async (): Promise<string> => {
     if (!existsSync(root)) return ""
-    const bin = process.env.AFS_BIN?.trim() || "afs"
+    const bin = process.env.AFS_BIN?.trim() || process.env.AFS_CLI?.trim() || "afs"
     try {
-      const result = await $`${bin} claude hook --raw --event SessionStart --path ${base}`
-        .quiet()
-        .nothrow()
+      const result = await $`${bin} claude hook --raw --event SessionStart --path ${base}`.quiet().nothrow()
       if (result.exitCode !== 0) return ""
       return result.stdout.toString().trim()
     } catch {

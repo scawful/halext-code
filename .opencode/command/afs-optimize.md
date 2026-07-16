@@ -13,7 +13,7 @@ Rules:
 - Inputs are three JSON files matching the `v1/optimization/*` schemas
   (check with `/afs-schema` first if unsure):
 
-  `"${AFS_CLI:-afs}" optimize decide --baseline <b.json> --candidate <c.json> --policy <p.json> --json`
+  `"${AFS_BIN:-${AFS_CLI:-afs}}" optimize decide --baseline <b.json> --candidate <c.json> --policy <p.json> --json`
 
 - Exit codes are the contract; report them precisely:
   - `0` eligible_for_human_review — evidence verdict, still needs human approval

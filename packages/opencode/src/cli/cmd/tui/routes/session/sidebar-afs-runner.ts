@@ -49,6 +49,7 @@ function windows(proc: ChildProcess, pid: number) {
       stdio: "ignore",
       windowsHide: true,
     })
+    child.once("error", () => {})
     child.unref()
   } catch {}
 
@@ -80,6 +81,7 @@ foreach ($targetPid in $targets) {
       ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
       { stdio: "ignore", windowsHide: true },
     )
+    child.once("error", () => {})
     child.unref()
   } catch {}
 

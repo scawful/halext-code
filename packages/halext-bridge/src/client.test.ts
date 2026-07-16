@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { createHalextBridgeClient, parseApprovals, parseHealth, parseMissions, parseSummary } from "./index"
+import { createHalextBridgeClient, parseApprovals, parseHealth, parseMissions, parsePack, parseSummary } from "./index"
 
 const servers: Array<ReturnType<typeof Bun.serve>> = []
 
@@ -79,14 +79,42 @@ const summary = {
   recommended_actions: [],
 }
 
+const pack = {
+  context_path: "/workspace/.context",
+  project: "workspace",
+  profile: "dev",
+  model: "codex" as const,
+  query: "review attention",
+  token_budget: 2_000,
+  estimated_tokens: 40,
+  guidance: "Use the focused pack.",
+  sections: [
+    {
+      title: "Attention",
+      body: "Review the active mission.",
+      priority: 10,
+      sources: ["scratchpad/state.md"],
+      estimated_tokens: 8,
+    },
+  ],
+  sources: ["scratchpad/state.md"],
+  omitted_sections: [],
+  artifact_paths: { context: "/workspace/.context" },
+}
+
 describe("bridge response validation", () => {
   test("accepts current mission, approval, and health payloads", () => {
     expect(parseMissions([mission])).toEqual([mission])
     expect(parseApprovals([approval])).toEqual([approval])
     expect(parseHealth(health)).toEqual(health)
     expect(parseSummary(summary)).toEqual(summary)
+    expect(parsePack(pack)).toEqual(pack)
     expect(parseMissions([{ ...mission, acceptance: undefined }])).toHaveLength(1)
     expect(parseApprovals([{ ...approval, rationale: undefined }])).toHaveLength(1)
+  })
+
+  test("rejects non-string session pack models", () => {
+    expect(() => parsePack({ ...pack, model: ["codex"] })).toThrow("invalid session pack payload")
   })
 
   test("rejects malformed payloads before callers receive them", async () => {
@@ -96,6 +124,7 @@ describe("bridge response validation", () => {
     await expect(client.getApprovals()).rejects.toThrow("invalid approvals payload")
     await expect(client.getHealth()).rejects.toThrow("invalid health payload")
     await expect(client.getSummary()).rejects.toThrow("invalid summary payload")
+    await expect(client.getPack()).rejects.toThrow("invalid session pack payload")
   })
 })
 

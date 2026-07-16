@@ -85,6 +85,7 @@ describe("AFS response validation", () => {
 
     for (const path of [
       "/api/summary",
+      "/api/session/pack",
       "/api/missions?status=active",
       "/api/approvals?status=pending",
       "/api/health",

@@ -31,7 +31,12 @@ export function availability(failed: boolean[], seen: boolean[]): Attention {
 }
 
 export function refreshError(owned: string, visible: string, next: string) {
-  if (next) return { owned: next, visible: next }
+  if (next) {
+    return {
+      owned: next,
+      visible: !visible || visible === owned ? next : visible,
+    }
+  }
   return {
     owned: "",
     visible: owned && visible === owned ? "" : visible,

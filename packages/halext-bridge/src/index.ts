@@ -253,20 +253,32 @@ function numericRecord(value: unknown) {
   return record(value) && Object.values(value).every(finite)
 }
 
+function stringRecord(value: unknown) {
+  return record(value) && Object.values(value).every((item) => typeof item === "string")
+}
+
 function task(value: unknown): value is AfsTask {
   if (!record(value)) return false
   if (typeof value.id !== "string" || typeof value.title !== "string" || typeof value.status !== "string") return false
-  if (typeof value.assigned_to !== "string" || typeof value.created_by !== "string" || !finite(value.priority)) return false
-  if (!record(value.context) || typeof value.created_at !== "string" || typeof value.updated_at !== "string") return false
+  if (typeof value.assigned_to !== "string" || typeof value.created_by !== "string" || !finite(value.priority))
+    return false
+  if (!record(value.context) || typeof value.created_at !== "string" || typeof value.updated_at !== "string")
+    return false
   return true
 }
 
 function handoff(value: unknown): value is AfsLatestHandoff {
   if (!record(value) || typeof value.available !== "boolean") return false
   if (!value.available) return true
-  if (typeof value.session_id !== "string" || typeof value.agent_name !== "string" || typeof value.timestamp !== "string") return false
+  if (
+    typeof value.session_id !== "string" ||
+    typeof value.agent_name !== "string" ||
+    typeof value.timestamp !== "string"
+  )
+    return false
   if (!strings(value.accomplished) || !strings(value.blocked) || !strings(value.next_steps)) return false
-  if (!record(value.context_snapshot) || !Array.isArray(value.open_tasks) || !value.open_tasks.every(record)) return false
+  if (!record(value.context_snapshot) || !Array.isArray(value.open_tasks) || !value.open_tasks.every(record))
+    return false
   return record(value.metadata)
 }
 
@@ -281,7 +293,11 @@ function scratchpad(value: unknown) {
 
 export function parseSummary(value: unknown): AfsBootstrapSummary {
   if (!record(value)) throw new Error("Bridge returned an invalid summary payload")
-  if (typeof value.context_path !== "string" || typeof value.project !== "string" || typeof value.profile !== "string") {
+  if (
+    typeof value.context_path !== "string" ||
+    typeof value.project !== "string" ||
+    typeof value.profile !== "string"
+  ) {
     throw new Error("Bridge returned an invalid summary payload")
   }
   if (!record(value.status) || !numericRecord(value.status.mount_counts)) {
@@ -305,9 +321,11 @@ export function parseSummary(value: unknown): AfsBootstrapSummary {
 
 function mission(value: unknown): value is AfsMission {
   if (!record(value)) return false
-  if (typeof value.mission_id !== "string" || typeof value.title !== "string" || typeof value.status !== "string") return false
+  if (typeof value.mission_id !== "string" || typeof value.title !== "string" || typeof value.status !== "string")
+    return false
   if (typeof value.created_at !== "string" || typeof value.updated_at !== "string") return false
-  if (typeof value.summary !== "string" || typeof value.owner !== "string" || typeof value.schema_version !== "string") return false
+  if (typeof value.summary !== "string" || typeof value.owner !== "string" || typeof value.schema_version !== "string")
+    return false
   if (value.acceptance !== undefined && typeof value.acceptance !== "string") return false
   if (!strings(value.next_steps) || !strings(value.blockers) || !strings(value.linked_sessions)) return false
   if (!strings(value.linked_handoffs) || !strings(value.tags)) return false
@@ -317,7 +335,8 @@ function mission(value: unknown): value is AfsMission {
 
 function approval(value: unknown): value is AfsApproval {
   if (!record(value)) return false
-  if (typeof value.agent !== "string" || typeof value.action !== "string" || typeof value.detail !== "string") return false
+  if (typeof value.agent !== "string" || typeof value.action !== "string" || typeof value.detail !== "string")
+    return false
   if (typeof value.timestamp !== "string" || typeof value.status !== "string") return false
   if (typeof value.reviewed_by !== "string" || typeof value.reviewed_at !== "string") return false
   return value.rationale === undefined || typeof value.rationale === "string"
@@ -325,7 +344,8 @@ function approval(value: unknown): value is AfsApproval {
 
 function score(value: unknown): value is AfsHealthScore {
   if (!record(value)) return false
-  if (typeof value.category !== "string" || typeof value.metric !== "string" || typeof value.status !== "string") return false
+  if (typeof value.category !== "string" || typeof value.metric !== "string" || typeof value.status !== "string")
+    return false
   if (typeof value.message !== "string" || typeof value.timestamp !== "string" || !finite(value.score)) return false
   return value.details === undefined || record(value.details)
 }
@@ -348,8 +368,46 @@ export function parseHealth(value: unknown): AfsHealthSummary {
   if (!finite(value.overall_score) || typeof value.overall_status !== "string" || !finite(value.duration_ms)) {
     throw new Error("Bridge returned an invalid health payload")
   }
-  if (!Array.isArray(value.scores) || !value.scores.every(score)) throw new Error("Bridge returned an invalid health payload")
+  if (!Array.isArray(value.scores) || !value.scores.every(score))
+    throw new Error("Bridge returned an invalid health payload")
   return value as AfsHealthSummary
+}
+
+function packSection(value: unknown): value is AfsContextPackSection {
+  if (!record(value)) return false
+  if (typeof value.title !== "string" || typeof value.body !== "string") return false
+  if (!finite(value.priority) || !finite(value.estimated_tokens)) return false
+  return strings(value.sources)
+}
+
+export function parsePack(value: unknown): AfsContextPack {
+  if (!record(value)) throw new Error("Bridge returned an invalid session pack payload")
+  if (
+    typeof value.context_path !== "string" ||
+    typeof value.project !== "string" ||
+    typeof value.profile !== "string"
+  ) {
+    throw new Error("Bridge returned an invalid session pack payload")
+  }
+  if (typeof value.model !== "string" || !["generic", "gemini", "claude", "codex"].includes(value.model)) {
+    throw new Error("Bridge returned an invalid session pack payload")
+  }
+  if (typeof value.query !== "string" || typeof value.guidance !== "string") {
+    throw new Error("Bridge returned an invalid session pack payload")
+  }
+  if (!finite(value.token_budget) || !finite(value.estimated_tokens)) {
+    throw new Error("Bridge returned an invalid session pack payload")
+  }
+  if (!Array.isArray(value.sections) || !value.sections.every(packSection)) {
+    throw new Error("Bridge returned an invalid session pack payload")
+  }
+  if (!strings(value.sources) || !strings(value.omitted_sections)) {
+    throw new Error("Bridge returned an invalid session pack payload")
+  }
+  if (value.artifact_paths !== undefined && !stringRecord(value.artifact_paths)) {
+    throw new Error("Bridge returned an invalid session pack payload")
+  }
+  return value as AfsContextPack
 }
 
 type RequestOptions = {
@@ -410,53 +468,77 @@ export function createHalextBridgeClient(options?: { baseUrl?: string; timeoutMs
       return request("/health", {}, 5_000) as Promise<{ ok: true; afs_cli: string; default_path: string; cwd: string }>
     },
     getSummary(params: SummaryParams = {}) {
-      return request("/api/summary", {
-        path: params.path,
-        task_limit: params.taskLimit,
-        message_limit: params.messageLimit,
-      }, 12_000).then(parseSummary)
+      return request(
+        "/api/summary",
+        {
+          path: params.path,
+          task_limit: params.taskLimit,
+          message_limit: params.messageLimit,
+        },
+        12_000,
+      ).then(parseSummary)
     },
     getPack(params: PackParams = {}) {
-      return request("/api/session/pack", {
-        path: params.path,
-        query: params.query,
-        model: params.model,
-        token_budget: params.tokenBudget,
-        max_query_results: params.maxQueryResults,
-        max_embedding_results: params.maxEmbeddingResults,
-        timeout_ms: params.timeoutMs,
-      }, (params.timeoutMs ?? 60_000) + 2_000) as Promise<AfsContextPack>
+      return request(
+        "/api/session/pack",
+        {
+          path: params.path,
+          query: params.query,
+          model: params.model,
+          token_budget: params.tokenBudget,
+          max_query_results: params.maxQueryResults,
+          max_embedding_results: params.maxEmbeddingResults,
+          timeout_ms: params.timeoutMs,
+        },
+        (params.timeoutMs ?? 60_000) + 2_000,
+      ).then(parsePack)
     },
     getMissions(params: MissionListParams = {}) {
-      return request("/api/missions", {
-        path: params.path,
-        status: params.status,
-        limit: params.limit,
-      }, 12_000).then(parseMissions)
+      return request(
+        "/api/missions",
+        {
+          path: params.path,
+          status: params.status,
+          limit: params.limit,
+        },
+        12_000,
+      ).then(parseMissions)
     },
     getApprovals(params: ApprovalListParams = {}) {
-      return request("/api/approvals", {
-        status: params.status,
-      }, 12_000).then(parseApprovals)
+      return request(
+        "/api/approvals",
+        {
+          status: params.status,
+        },
+        12_000,
+      ).then(parseApprovals)
     },
     getHealth() {
       return request("/api/health", {}, 22_000).then(parseHealth)
     },
     getFsList(params: FsListParams = {}) {
-      return request("/api/fs/list", {
-        path: params.path,
-        root: params.root,
-        depth: params.depth,
-        limit: params.limit,
-        include_hidden: params.includeHidden ? 1 : undefined,
-      }, 15_000) as Promise<FsListResult>
+      return request(
+        "/api/fs/list",
+        {
+          path: params.path,
+          root: params.root,
+          depth: params.depth,
+          limit: params.limit,
+          include_hidden: params.includeHidden ? 1 : undefined,
+        },
+        15_000,
+      ) as Promise<FsListResult>
     },
     getFsRead(params: FsReadParams) {
-      return request("/api/fs/read", {
-        path: params.path,
-        root: params.root,
-        max_bytes: params.maxBytes,
-      }, 15_000) as Promise<FsReadResult>
+      return request(
+        "/api/fs/read",
+        {
+          path: params.path,
+          root: params.root,
+          max_bytes: params.maxBytes,
+        },
+        15_000,
+      ) as Promise<FsReadResult>
     },
   }
 }

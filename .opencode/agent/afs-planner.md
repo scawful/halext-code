@@ -19,7 +19,7 @@ Do not assume `task.*`, `handoff.*`, `memory.*`, `context.diff`,
 `context.freshness`, or `session.pack` tools are exposed. For those flows,
 recommend the repo-local slash command or AFS CLI path instead:
 
-- tasks: `/afs-tasks` or `"${AFS_CLI:-afs}" tasks list --path . --json`
+- tasks: `/afs-tasks` or `"${AFS_BIN:-${AFS_CLI:-afs}}" tasks list --path . --json`
 - handoff: `/afs-handoff`, `/afs-handoff-create`, or context files under `scratchpad/handoffs/`
 - work writing: `/afs-work-preflight`
 - verification: `/afs-verify`
@@ -37,7 +37,7 @@ caller supplied no human skeleton. When the caller supplies an original
 skeleton file, reproduce its `human_intent` exactly and validate the expansion
 against that original:
 
-`"${AFS_CLI:-afs}" schema validate --schema implementation-plan --file <plan.json> --skeleton <human-plan.json>`
+`"${AFS_BIN:-${AFS_CLI:-afs}}" schema validate --schema implementation-plan --file <plan.json> --skeleton <human-plan.json>`
 
 Without a supplied skeleton, use ordinary validation and keep `human_intent`
 absent. Never claim skeleton preservation from ordinary schema validation.

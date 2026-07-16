@@ -88,7 +88,7 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
    (`/start`, `/find`, `/check`, `/ship`, `/reply`, `/handoff`, `/fixafs`,
    `/setupafs`).
 2. If no alias fits, route directly with
-   `~/src/lab/afs/scripts/afs next --path . --intent <intent> --json`.
+   `"${AFS_BIN:-${AFS_CLI:-afs}}" next --path . --intent <intent> --json`.
 3. Check current state with `/afs-brief`, `afs_local_context_status`, or
    `afs_local_context_query`.
 4. Read scratchpad or handoff state with `afs_local_context_read`.
