@@ -1,4 +1,8 @@
 import { spawn, type ChildProcess } from "child_process"
+import { randomUUID } from "crypto"
+import { readFileSync, unlinkSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
 
 export type RunOptions = {
   timeout: number
@@ -8,79 +12,96 @@ export type RunOptions = {
 type DescendantCleanup = "clean" | "descendants" | "error"
 
 function cleanupWindowsDescendants(pid: number): Promise<DescendantCleanup> {
+  const resultPath = join(tmpdir(), `hcode-afs-cleanup-${process.pid}-${randomUUID()}.txt`)
+  const encodedResultPath = Buffer.from(resultPath).toString("base64")
   const script = `
 $ErrorActionPreference = 'Stop'
-$rootPid = [uint32]${pid}
-$all = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId)
-$ErrorActionPreference = 'SilentlyContinue'
-$pending = @($rootPid)
-$targets = @()
-while ($pending.Count -gt 0) {
-  $next = @()
-  foreach ($parentPid in $pending) {
-    $next += @($all | Where-Object { [uint32]$_.ParentProcessId -eq [uint32]$parentPid } | ForEach-Object { [uint32]$_.ProcessId })
+$resultPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedResultPath}'))
+try {
+  $rootPid = [uint32]${pid}
+  $targets = @(
+    Get-CimInstance -Query "SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = $rootPid" |
+      ForEach-Object { [uint32]$_.ProcessId }
+  )
+  $ErrorActionPreference = 'SilentlyContinue'
+  if ($targets.Count -eq 0) {
+    [IO.File]::WriteAllText($resultPath, 'clean', [Text.Encoding]::ASCII)
+    exit 0
   }
-  $next = @($next | Where-Object { $targets -notcontains $_ } | Sort-Object -Unique)
-  $targets += $next
-  $pending = $next
+  # Report discovery before taskkill waits for the inherited provider handle;
+  # the caller can fail closed immediately while this helper drains each tree.
+  [IO.File]::WriteAllText($resultPath, 'descendants', [Text.Encoding]::ASCII)
+  foreach ($targetPid in $targets) {
+    & taskkill.exe /PID $targetPid /T /F *> $null
+  }
+} catch {
+  try { [IO.File]::WriteAllText($resultPath, 'error', [Text.Encoding]::ASCII) } catch {}
 }
-if ($targets.Count -eq 0) {
-  [Console]::Out.Write('clean')
-  exit 0
-}
-foreach ($targetPid in $targets) {
-  & taskkill.exe /PID $targetPid /T /F *> $null
-}
-[Console]::Out.Write('descendants')
 exit 0
 `
 
   return new Promise((resolve) => {
-    let cleaner: ChildProcess
-    try {
-      cleaner = spawn(
-        "powershell.exe",
-        ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-        { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
-      )
-    } catch {
-      resolve("error")
-      return
-    }
+    let cleaner: ChildProcess | undefined
 
     let settled = false
+    let poll: ReturnType<typeof setInterval> | undefined
     const finish = (result: DescendantCleanup) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      cleaner.stdout?.destroy()
-      cleaner.unref()
+      if (poll) clearInterval(poll)
+      try {
+        unlinkSync(resultPath)
+      } catch {}
+      cleaner?.unref()
       resolve(result)
     }
     const timer = setTimeout(() => {
-      cleaner.kill("SIGKILL")
+      cleaner?.kill("SIGKILL")
       finish("error")
-    }, 5_000)
+    }, 7_000)
     timer.unref()
-    let output = ""
-    cleaner.stdout?.on("data", (chunk: Buffer) => {
-      // PowerShell can keep provider handles open after the script has
-      // produced its result. Consume the explicit result instead of waiting
-      // for Bun's delayed process lifecycle events.
-      output += chunk.toString().replaceAll("\0", "")
-      if (output.includes("descendants")) finish("descendants")
-      else if (output.includes("clean")) finish("clean")
-    })
-    cleaner.once("error", () => finish("error"))
+    poll = setInterval(() => {
+      let result = ""
+      try {
+        result = readFileSync(resultPath, "ascii").trim()
+      } catch {}
+      if (result === "descendants") finish("descendants")
+      else if (result === "clean") finish("clean")
+      else if (result === "error") finish("error")
+    }, 25)
+    poll.unref()
+
+    const launch = (command: "pwsh.exe" | "powershell.exe") => {
+      if (settled) return
+      try {
+        cleaner = spawn(
+          command,
+          ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+          { stdio: "ignore", windowsHide: true },
+        )
+      } catch {
+        if (command === "pwsh.exe") launch("powershell.exe")
+        else finish("error")
+        return
+      }
+      cleaner.once("error", () => {
+        if (command === "pwsh.exe") launch("powershell.exe")
+        else finish("error")
+      })
+    }
+    // PowerShell 7 avoids the slow legacy CIM startup seen on loaded hosts.
+    // Retain the inbox shell as a compatibility
+    // fallback for Windows machines without pwsh.
+    launch("pwsh.exe")
   })
 }
 
 function terminateWindows(proc: ChildProcess, pid: number, cleanupDescendants: () => Promise<DescendantCleanup>) {
   // taskkill handles the ordinary case while the parent is still alive. A direct
   // child can exit before our timeout while one of its children keeps inherited
-  // stdout open, though; taskkill cannot root a tree at that dead PID. Snapshot
-  // Win32_Process as a fallback and kill any surviving descendants by their own
-  // PIDs, preserving tree cleanup for that orphaned-parent case.
+  // stdout open, though; taskkill cannot root a tree at that dead PID. Query
+  // surviving direct children and kill each remaining tree by its own PID.
   try {
     const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
       stdio: "ignore",
@@ -188,6 +209,13 @@ export function run(cmd: string[], opts: RunOptions): Promise<string | null> {
     proc.once("error", () => {
       failed = true
       finish(null)
+    })
+    proc.once("exit", () => {
+      if (settled || process.platform !== "win32" || !proc.pid) return
+      // A descendant can keep inherited pipes open after the direct process
+      // exits, which delays `close`. Start discovery at `exit` so cleanup can
+      // drain that tree and allow the captured streams to close promptly.
+      void cleanupWindows()
     })
     proc.once("close", (code) => {
       if (settled) return
