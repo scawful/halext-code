@@ -822,9 +822,11 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       setStatusText(`AFS health ${health.overall_status} (${Math.round(health.overall_score * 100)}%).${detail}`)
     } catch (error) {
       if (generation !== healthGeneration) return
-      const state = refreshError(healthError, errorText(), explainError(error), attentionError)
+      const detail = explainError(error)
+      const state = refreshError(healthError, errorText(), detail, attentionError)
       healthError = state.owned
       if (state.visible !== errorText()) setErrorText(state.visible)
+      setStatusText("AFS health check failed")
     } finally {
       if (healthAbort === next) healthAbort = undefined
     }

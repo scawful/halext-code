@@ -62,11 +62,15 @@ while ($pending.Count -gt 0) {
   $targets += $next
   $pending = $next
 }
-if ($targets.Count -eq 0) { exit 0 }
+if ($targets.Count -eq 0) {
+  [Console]::Out.Write('clean')
+  exit 0
+}
 foreach ($targetPid in $targets) {
   & taskkill.exe /PID $targetPid /T /F *> $null
 }
-exit 42
+[Console]::Out.Write('descendants')
+exit 0
 `
 
   return new Promise((resolve) => {
@@ -75,7 +79,7 @@ exit 42
       cleaner = spawn(
         "powershell.exe",
         ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-        { stdio: "ignore", windowsHide: true },
+        { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
       )
     } catch {
       resolve("error")
@@ -87,6 +91,8 @@ exit 42
       if (settled) return
       settled = true
       clearTimeout(timer)
+      cleaner.stdout?.destroy()
+      cleaner.unref()
       resolve(result)
     }
     const timer = setTimeout(() => {
@@ -94,10 +100,15 @@ exit 42
       finish("error")
     }, 5_000)
     timer.unref()
+    let output = ""
+    cleaner.stdout?.on("data", (chunk: Buffer) => {
+      // Consume the explicit result before Bun's delayed Windows process
+      // lifecycle events; provider handles can otherwise hold them open.
+      output += chunk.toString().replaceAll("\0", "")
+      if (output.includes("descendants")) finish("descendants")
+      else if (output.includes("clean")) finish("clean")
+    })
     cleaner.once("error", () => finish("error"))
-    // Bun on Windows can delay `close` for inherited provider handles after
-    // PowerShell exits. stdio is ignored, so `exit` is sufficient here.
-    cleaner.once("exit", (code) => finish(code === 0 ? "clean" : code === 42 ? "descendants" : "error"))
   })
 }
 
