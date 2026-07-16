@@ -7,6 +7,19 @@ import { Filesystem } from "../../src/util/filesystem"
 import { tmpdir } from "../fixture/fixture"
 
 describe("file/index Filesystem patterns", () => {
+  test("background indexing tolerates a missing directory", async () => {
+    await using tmp = await tmpdir()
+    const missing = path.join(tmp.path, "missing")
+
+    await Instance.provide({
+      directory: missing,
+      fn: async () => {
+        await File.init()
+        expect(await File.search({ query: "" })).toEqual([])
+      },
+    })
+  })
+
   describe("File.read() - text content", () => {
     test("reads text file via Filesystem.readText()", async () => {
       await using tmp = await tmpdir()
