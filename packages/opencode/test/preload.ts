@@ -45,6 +45,10 @@ process.env["OPENCODE_TEST_HOME"] = testHome
 const testManagedConfigDir = path.join(dir, "managed")
 process.env["OPENCODE_TEST_MANAGED_CONFIG_DIR"] = testManagedConfigDir
 
+// Unit tests inject the plugins they exercise explicitly. Never let a test
+// bootstrap reach the package registry for the production default plugin.
+process.env["OPENCODE_DISABLE_DEFAULT_PLUGINS"] = "true"
+
 // Write the cache version file to prevent global/index.ts from clearing the cache
 const cacheDir = path.join(dir, "cache", "opencode")
 await fs.mkdir(cacheDir, { recursive: true })

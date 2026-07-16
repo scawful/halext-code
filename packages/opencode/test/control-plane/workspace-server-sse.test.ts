@@ -1,30 +1,18 @@
-import { afterEach, describe, expect, test } from "bun:test"
-import { Log } from "../../src/util/log"
-import { WorkspaceServer } from "../../src/control-plane/workspace-server/server"
+import { describe, expect, test } from "bun:test"
+import { WorkspaceServerRoutes } from "../../src/control-plane/workspace-server/routes"
 import { parseSSE } from "../../src/control-plane/sse"
 import { GlobalBus } from "../../src/bus/global"
-import { resetDatabase } from "../fixture/db"
-import { tmpdir } from "../fixture/fixture"
-
-afterEach(async () => {
-  await resetDatabase()
-})
-
-Log.init({ print: false })
 
 describe("control-plane/workspace-server SSE", () => {
   test("streams GlobalBus events and parseSSE reads them", async () => {
-    await using tmp = await tmpdir({ git: true })
-    const app = WorkspaceServer.App()
+    const app = WorkspaceServerRoutes()
     const stop = new AbortController()
     const seen: unknown[] = []
+    const listeners = GlobalBus.listenerCount("event")
+    let parser = Promise.resolve()
     try {
       const response = await app.request("/event", {
         signal: stop.signal,
-        headers: {
-          "x-opencode-workspace": "wrk_test_workspace",
-          "x-opencode-directory": tmp.path,
-        },
       })
 
       expect(response.status).toBe(200)
@@ -35,7 +23,7 @@ describe("control-plane/workspace-server SSE", () => {
           reject(new Error("timed out waiting for workspace.test event"))
         }, 3000)
 
-        void parseSSE(response.body!, stop.signal, (event) => {
+        parser = parseSSE(response.body!, stop.signal, (event) => {
           seen.push(event)
           const next = event as { type?: string }
           if (next.type === "server.connected") {
@@ -65,6 +53,8 @@ describe("control-plane/workspace-server SSE", () => {
       })
     } finally {
       stop.abort()
+      await parser
     }
+    expect(GlobalBus.listenerCount("event")).toBe(listeners)
   })
 })

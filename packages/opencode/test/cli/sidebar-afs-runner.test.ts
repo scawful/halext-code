@@ -123,26 +123,39 @@ describe("sidebar AFS runner", () => {
   test("aborts the process tree when a descendant retains the pipes", async () => {
     await using tmp = await tmpdir()
     const marker = join(tmp.path, "descendant.pid")
-    const started = performance.now()
-    const result = await run(
+    const abort = new AbortController()
+    const pending = run(
       [
         "node",
         "-e",
         `const { spawn } = require("node:child_process"); const { writeFileSync } = require("node:fs"); const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { stdio: "inherit", detached: process.platform === "win32" }); writeFileSync(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
       ],
       {
-        signal: new AbortController().signal,
-        timeout: 2_000,
+        signal: abort.signal,
+        timeout: 60_000,
         limit: 1_024,
       },
     )
+    const pid = await waitForPid(marker)
+    if (pid === undefined) {
+      abort.abort()
+      await pending
+    }
+    expect(pid).toBeDefined()
+
+    abort.abort()
+    const missed = Symbol("descendant abort did not settle")
+    const result = await Promise.race([pending, Promise.resolve(missed)])
+    if (result === missed) {
+      try {
+        process.kill(pid!, "SIGKILL")
+      } catch {}
+      await pending
+    }
 
     expect(result).toBeUndefined()
-    expect(performance.now() - started).toBeLessThan(4_000)
-    const pid = Number(await Bun.file(marker).text())
-    expect(pid).toBeGreaterThan(0)
-    for (let attempt = 0; attempt < 20 && alive(pid); attempt++) await Bun.sleep(250)
-    expect(alive(pid)).toBeFalse()
+    for (let attempt = 0; attempt < 20 && alive(pid!); attempt++) await Bun.sleep(250)
+    expect(alive(pid!)).toBeFalse()
   })
 
   test.skipIf(process.platform === "win32")("rejects a successful parent with ignored-stdio descendants", async () => {
