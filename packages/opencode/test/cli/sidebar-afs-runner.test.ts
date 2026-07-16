@@ -184,16 +184,39 @@ describe("sidebar AFS runner", () => {
   )
 
   test("honors a caller abort before the wall-clock timeout", async () => {
+    await using tmp = await tmpdir()
+    const marker = join(tmp.path, "abort.pid")
     const abort = new AbortController()
-    const started = performance.now()
-    const result = run(["node", "-e", "setTimeout(() => {}, 5000)"], {
-      signal: abort.signal,
-      timeout: 2_000,
-      limit: 1_024,
-    })
-    setTimeout(() => abort.abort(), 25)
+    const pending = run(
+      [
+        node,
+        "-e",
+        `require("node:fs").writeFileSync(${JSON.stringify(marker)}, String(process.pid)); setInterval(() => {}, 1000)`,
+      ],
+      {
+        signal: abort.signal,
+        timeout: 60_000,
+        limit: 1_024,
+      },
+    )
+    const pid = await waitForPid(marker)
+    if (pid === undefined) {
+      abort.abort()
+      await pending
+    }
+    expect(pid).toBeDefined()
 
-    expect(await result).toBeUndefined()
-    expect(performance.now() - started).toBeLessThan(1_000)
+    abort.abort()
+    const missed = Symbol("caller abort did not settle")
+    const result = await Promise.race([pending, Promise.resolve(missed)])
+    if (result === missed) {
+      try {
+        process.kill(pid!, "SIGKILL")
+      } catch {}
+      await pending
+    }
+    expect(result).toBeUndefined()
+    for (let attempt = 0; attempt < 20 && alive(pid!); attempt++) await Bun.sleep(250)
+    expect(alive(pid!)).toBeFalse()
   })
 })
