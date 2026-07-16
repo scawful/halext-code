@@ -8,13 +8,13 @@ Rules:
 
 - Run the router:
 
-  `~/src/lab/afs/scripts/afs next --path . --intent setup --json`
+  `"${AFS_CLI:-afs}" next --path . --intent setup --json`
 
 - Prefer manager snapshot or setup dry-run before writing anything:
 
-  `~/src/lab/afs/scripts/afs manager snapshot --path . --json`
+  `"${AFS_CLI:-afs}" manager snapshot --path . --json`
 
-  `~/src/lab/afs/scripts/afs setup --workspace . --dry-run`
+  `"${AFS_CLI:-afs}" setup --workspace . --dry-run`
 
 - Do not mutate `.gemini`, `.claude`, `.opencode`, `.mcp.json`, shell startup,
   or extension config unless the user approves the preview.

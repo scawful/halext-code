@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 dir="$ROOT"
 live="${HCODE_SMOKE_LIVE:-0}"
+afs_root="${AFS_ROOT:-/Users/scawful/src/lab/afs}"
+afs_cli="${AFS_CLI:-$afs_root/scripts/afs}"
 
 if [[ "${1:-}" == "--live-run" ]]; then
   live="1"
@@ -36,6 +38,51 @@ json_get() {
 say() {
   printf '%s\n' "$*" >&2
 }
+
+help_for() {
+  local out
+  if ! out="$("$afs_cli" "$@" --help 2>&1)"; then
+    printf 'AFS CLI contract failed for %s: %s\n' "$*" "$out" >&2
+    return 1
+  fi
+  printf '%s' "$out"
+}
+
+require_flag() {
+  local label="$1"
+  local flag="$2"
+  local help="$3"
+  if ! grep -Fq -- "$flag" <<<"$help"; then
+    printf 'expected %s help to expose %s\n' "$label" "$flag" >&2
+    return 1
+  fi
+}
+
+say "smoke: checking AFS attention and schema CLI contracts"
+mission_help="$(help_for mission list)"
+require_flag "mission list" "--status" "$mission_help"
+require_flag "mission list" "--limit" "$mission_help"
+require_flag "mission list" "--json" "$mission_help"
+
+approval_help="$(help_for approvals approve)"
+require_flag "approvals approve" "--because" "$approval_help"
+
+schema_help="$(help_for schema validate)"
+require_flag "schema validate" "--skeleton" "$schema_help"
+
+optimize_help="$(help_for optimize decide)"
+require_flag "optimize decide" "--baseline" "$optimize_help"
+require_flag "optimize decide" "--candidate" "$optimize_help"
+require_flag "optimize decide" "--policy" "$optimize_help"
+
+if grep -RqsF '~/src/lab/afs/scripts/afs' "$ROOT/.opencode/command" "$ROOT/.opencode/agent"; then
+  echo "prompt-layer AFS recipes must resolve AFS_CLI instead of a fixed checkout" >&2
+  exit 1
+fi
+if ! grep -Fq -- '--skeleton <human-plan.json>' "$ROOT/.opencode/agent/afs-planner.md"; then
+  echo "planner must validate human_intent against the supplied skeleton" >&2
+  exit 1
+fi
 
 say "smoke: checking repo-local AFS status hook"
 status="$(grab debug agent build --tool afs_local_context_status --params '{}')"

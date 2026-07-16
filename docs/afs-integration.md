@@ -21,10 +21,14 @@ TypeScript rewrite.
 - Short aliases cover the common daily paths: `/start`, `/find`, `/check`,
   `/ship`, `/reply`, `/handoff`, `/fixafs`, and `/setupafs`.
 - The default Python AFS MCP catalog is intentionally slim: `context.status`,
-  `context.query`, `context.read`, `context.write`, and `context.list`.
+  `context.query`, `context.read`, `context.write`, `context.list`,
+  `skill.match`, and `skill.read`.
   Heavier AFS behavior is reached through CLI/framework hints or an explicit
   full-catalog AFS server.
 - Project-local guidance lives in `.opencode/skills/halext-afs/SKILL.md`.
+- Prompt-layer CLI recipes resolve `"${AFS_CLI:-afs}"`; `scripts/hcode`
+  derives `AFS_CLI` from the overridable `AFS_ROOT`, while non-wrapper launches
+  can provide `AFS_CLI` directly or expose `afs` on `PATH`.
 - Project-local subagents under `.opencode/agent/` provide a small visible
   AFS-aware set for context, planning, review, worker, and critic lanes.
   Specialized exact-name agents exist for advanced flows, but slash commands

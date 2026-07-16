@@ -8,7 +8,7 @@ Rules:
 
 - Run the router:
 
-  `~/src/lab/afs/scripts/afs next --path . --intent handoff --json`
+  `"${AFS_CLI:-afs}" next --path . --intent handoff --json`
 
 - For inspection, list/query handoffs and read exact files only.
 - For a new handoff, write a concise operational note under

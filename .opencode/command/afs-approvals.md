@@ -10,7 +10,7 @@ Rules:
 
 - Default action is read-only listing:
 
-  `~/src/lab/afs/scripts/afs approvals list --json`
+  `"${AFS_CLI:-afs}" approvals list --json`
 
 - Session grounding may already mention pending approvals; use this command to
   see the full request detail before acting.
@@ -19,14 +19,14 @@ Rules:
 
   First inspect the installed CLI contract:
 
-  `~/src/lab/afs/scripts/afs approvals approve --help`
-  `~/src/lab/afs/scripts/afs approvals reject --help`
+  `"${AFS_CLI:-afs}" approvals approve --help`
+  `"${AFS_CLI:-afs}" approvals reject --help`
 
   If it supports or requires `--because`, ask the human for the exact rationale
   and pass it before the positional pair:
 
-  `~/src/lab/afs/scripts/afs approvals approve --because "<human rationale>" -- <agent> <action>`
-  `~/src/lab/afs/scripts/afs approvals reject --because "<human rationale>" -- <agent> <action>`
+  `"${AFS_CLI:-afs}" approvals approve --because "<human rationale>" -- <agent> <action>`
+  `"${AFS_CLI:-afs}" approvals reject --because "<human rationale>" -- <agent> <action>`
 
   For an older CLI without `--because`, use the same commands without that
   option. Never invent, infer, or paraphrase a human rationale.
@@ -37,7 +37,7 @@ Rules:
   external-write approvals use `afs work approvals ... --path .` and approval
   IDs instead; do not mix the two stores or identifier formats.
 - For past decisions use
-  `~/src/lab/afs/scripts/afs approvals history --json`.
+  `"${AFS_CLI:-afs}" approvals history --json`.
 - Do not assume an `approvals.*` MCP tool exists; this flow is CLI-only.
 
 Return: pending requests (agent, action, detail), what — if anything — was

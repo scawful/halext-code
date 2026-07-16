@@ -8,11 +8,11 @@ Rules:
 
 - Run the router:
 
-  `~/src/lab/afs/scripts/afs next --path . --intent ship --json`
+  `"${AFS_CLI:-afs}" next --path . --intent ship --json`
 
 - Confirm scope with `git status --short` and inspect relevant diffs.
 - Run `git diff --check` and the smallest relevant verification from
-  `~/src/lab/afs/scripts/afs verify plan --cwd . --json`.
+  `"${AFS_CLI:-afs}" verify plan --cwd . --json`.
 - Commit/push only when the user explicitly asked to commit/push or the current
   instruction clearly includes shipping. Never force-push or rewrite history
   without explicit approval.

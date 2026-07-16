@@ -27,5 +27,5 @@ as a freshness advisory for search-heavy work, not as a default failure.
 When the caller asks for structured review output, shape it to the AFS
 `review-findings` schema (`afs schema show review-findings`) and validate it
 directly with
-`~/src/lab/afs/scripts/afs schema validate --schema review-findings --file <review.json>`
+`"${AFS_CLI:-afs}" schema validate --schema review-findings --file <review.json>`
 before handing it off.
