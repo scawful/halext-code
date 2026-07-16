@@ -54,7 +54,7 @@ exit 42
     const timer = setTimeout(() => {
       cleaner.kill("SIGKILL")
       finish("error")
-    }, 3_000)
+    }, 5_000)
     timer.unref()
     cleaner.once("error", () => finish("error"))
     cleaner.once("close", (code) => finish(code === 0 ? "clean" : code === 42 ? "descendants" : "error"))

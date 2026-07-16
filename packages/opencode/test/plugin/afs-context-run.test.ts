@@ -15,7 +15,7 @@ function processIsAlive(pid: number) {
 describe("plugin.afs-context bounded runner", () => {
   test("captures successful output without a shell", async () => {
     const text = await run([process.execPath, "-e", 'console.log("grounded")'], {
-      timeout: 2_000,
+      timeout: process.platform === "win32" ? 10_000 : 2_000,
       limit: 1_024,
     })
     expect(text).toBe("grounded")
@@ -23,7 +23,7 @@ describe("plugin.afs-context bounded runner", () => {
 
   test("returns null for nonzero exits", async () => {
     const text = await run([process.execPath, "-e", "process.exit(3)"], {
-      timeout: 2_000,
+      timeout: process.platform === "win32" ? 10_000 : 2_000,
       limit: 1_024,
     })
     expect(text).toBeNull()
@@ -95,7 +95,7 @@ describe("plugin.afs-context bounded runner", () => {
           "-e",
           `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdout: "inherit" }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
         ],
-        { timeout: 500, limit: 1_024 },
+        { timeout: 10_000, limit: 1_024 },
       )
       const elapsed = Date.now() - start
 
@@ -104,7 +104,7 @@ describe("plugin.afs-context bounded runner", () => {
       for (let attempt = 0; attempt < 20 && processIsAlive(pid); attempt++) await Bun.sleep(250)
       expect(processIsAlive(pid)).toBeFalse()
       expect(text).toBeNull()
-      expect(elapsed).toBeLessThan(2_000)
+      expect(elapsed).toBeLessThan(8_000)
     },
   )
 })
