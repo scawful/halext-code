@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, setSystemTime, test } from "bun:test"
 import type { NamedError } from "@opencode-ai/util/error"
 import { APICallError } from "ai"
 import { setTimeout as sleep } from "node:timers/promises"
@@ -38,11 +38,15 @@ describe("session.retry.delay", () => {
   })
 
   test("accepts http-date retry-after values", () => {
-    const date = new Date(Date.now() + 20000).toUTCString()
-    const error = apiError({ "retry-after": date })
-    const d = SessionRetry.delay(1, error)
-    expect(d).toBeGreaterThanOrEqual(19000)
-    expect(d).toBeLessThanOrEqual(20000)
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    setSystemTime(now)
+    try {
+      const date = new Date(now.getTime() + 20_000).toUTCString()
+      const error = apiError({ "retry-after": date })
+      expect(SessionRetry.delay(1, error)).toBe(20_000)
+    } finally {
+      setSystemTime()
+    }
   })
 
   test("ignores invalid retry hints", () => {
