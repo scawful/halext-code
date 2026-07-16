@@ -189,16 +189,13 @@ function command(cmd: string[]): [string, ...string[]] {
   if (process.platform !== "win32" || !/\.(cmd|bat)$/i.test(file)) return [file, ...cmd.slice(1)]
   // Batch files need a Windows command host. Encode argv before PowerShell
   // sees it so paths and user-supplied values never become shell syntax.
-  const data = Buffer.from(JSON.stringify(cmd)).toString("base64")
+  const data = Buffer.from(JSON.stringify({ exe: file, args: cmd.slice(1) })).toString("base64")
   const script = `
 $ErrorActionPreference = 'Stop'
 $json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}'))
-$parts = @(ConvertFrom-Json -InputObject $json)
-$exe = [string]$parts[0]
-$rest = @()
-if ($parts.Count -gt 1) {
-  $rest = @($parts[1..($parts.Count - 1)] | ForEach-Object { [string]$_ })
-}
+$payload = ConvertFrom-Json -InputObject $json
+$exe = [string]$payload.exe
+$rest = @($payload.args | ForEach-Object { [string]$_ })
 & $exe @rest
 exit $LASTEXITCODE
 `
