@@ -30,13 +30,13 @@ describe("sidebar AFS runner", () => {
   test("passes arguments without shell interpretation", async () => {
     await using tmp = await tmpdir()
     const file = join(tmp.path, process.platform === "win32" ? "afs.cmd" : "afs")
+    const script = "console.log(JSON.stringify(process.argv.slice(2)))"
     if (process.platform === "win32") {
-      await Bun.write(
-        file,
-        `@echo off\r\n"${process.execPath}" -e "console.log(JSON.stringify(Bun.argv.slice(1)))" %*\r\n`,
-      )
+      const source = join(tmp.path, "afs.cjs")
+      await Bun.write(source, script)
+      await Bun.write(file, `@echo off\r\nnode "${source}" %*\r\n`)
     } else {
-      await Bun.write(file, "#!/usr/bin/env bun\nconsole.log(JSON.stringify(Bun.argv.slice(2)))\n")
+      await Bun.write(file, `#!/usr/bin/env node\n${script}\n`)
       await chmod(file, 0o755)
     }
     const args = ["literal & value", 'quote"value']
@@ -54,7 +54,7 @@ describe("sidebar AFS runner", () => {
     for (const stream of ["stdout", "stderr"] as const) {
       const started = performance.now()
       const result = await run(
-        [process.execPath, "-e", `process.${stream}.write("x".repeat(4096)); await Bun.sleep(5000)`],
+        ["node", "-e", `process.${stream}.write("x".repeat(4096)); setTimeout(() => {}, 5000)`],
         {
           signal: new AbortController().signal,
           timeout: 10_000,
@@ -73,9 +73,9 @@ describe("sidebar AFS runner", () => {
     const started = performance.now()
     const result = await run(
       [
-        process.execPath,
+        "node",
         "-e",
-        `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdout: "inherit", stderr: "inherit", detached: process.platform === "win32" }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
+        `const { spawn } = require("node:child_process"); const { writeFileSync } = require("node:fs"); const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { stdio: "inherit", detached: process.platform === "win32" }); writeFileSync(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
       ],
       {
         signal: new AbortController().signal,
@@ -97,9 +97,9 @@ describe("sidebar AFS runner", () => {
     const marker = join(tmp.path, "descendant.pid")
     const result = await run(
       [
-        process.execPath,
+        "node",
         "-e",
-        `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
+        `const { spawn } = require("node:child_process"); const { writeFileSync } = require("node:fs"); const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { stdio: "ignore" }); writeFileSync(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
       ],
       {
         signal: new AbortController().signal,
@@ -123,9 +123,9 @@ describe("sidebar AFS runner", () => {
       const started = performance.now()
       const result = await run(
         [
-          process.execPath,
+          "node",
           "-e",
-          `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore", detached: true }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
+          `const { spawn } = require("node:child_process"); const { writeFileSync } = require("node:fs"); const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { stdio: "ignore", detached: true }); writeFileSync(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
         ],
         {
           signal: new AbortController().signal,
@@ -146,7 +146,7 @@ describe("sidebar AFS runner", () => {
   test("honors a caller abort before the wall-clock timeout", async () => {
     const abort = new AbortController()
     const started = performance.now()
-    const result = run([process.execPath, "-e", "await Bun.sleep(5000)"], {
+    const result = run(["node", "-e", "setTimeout(() => {}, 5000)"], {
       signal: abort.signal,
       timeout: 2_000,
       limit: 1_024,

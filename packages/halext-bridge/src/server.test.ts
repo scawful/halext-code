@@ -9,6 +9,7 @@ const originalCli = process.env.AFS_CLI
 const originalBin = process.env.AFS_BIN
 const paths: string[] = []
 const signalTest = process.platform === "win32" ? test.skip : test
+const node = process.platform === "win32" ? "node.exe" : "node"
 
 setDefaultTimeout(60_000)
 
@@ -23,14 +24,14 @@ function alive(pid: number) {
 
 async function fakeCli(source: string) {
   const directory = await mkdtemp(join(tmpdir(), "halext-bridge-test-"))
-  const script = join(directory, "afs.ts")
+  const script = join(directory, "afs.cjs")
   const path = process.platform === "win32" ? join(directory, "afs.cmd") : join(directory, "afs")
   paths.push(directory)
   await writeFile(script, `${source}\n`, "utf8")
   if (process.platform === "win32") {
-    await writeFile(path, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`, "utf8")
+    await writeFile(path, `@echo off\r\n${node} "${script}" %*\r\n`, "utf8")
   } else {
-    await writeFile(path, `#!/usr/bin/env bun\n${source}\n`, "utf8")
+    await writeFile(path, `#!/usr/bin/env node\n${source}\n`, "utf8")
     await chmod(path, 0o755)
   }
   process.env.AFS_BIN = path
@@ -67,7 +68,7 @@ describe("approval routing", () => {
 
   test("returns approved records instead of a false-empty response", async () => {
     await fakeCli(`
-const command = Bun.argv.slice(2)
+const command = process.argv.slice(2)
 if (command.join(" ") !== "approvals history --json") process.exit(2)
 console.log(JSON.stringify([
   { agent: "reviewer", action: "publish", detail: "approved", timestamp: "now", status: "approved", reviewed_by: "human", reviewed_at: "now" },
@@ -126,7 +127,7 @@ test("resolves the AFS CLI portably with AFS_BIN taking priority", async () => {
 })
 
 test("passes AFS arguments without shell interpretation", async () => {
-  await fakeCli("console.log(JSON.stringify(Bun.argv.slice(2)))")
+  await fakeCli("console.log(JSON.stringify(process.argv.slice(2)))")
   const args = ["literal & value", 'quote"value']
   expect(await runAfsJson<string[]>(args)).toEqual(args)
 })
@@ -143,12 +144,12 @@ setInterval(() => {}, 1_000)
 })
 
 test("caps combined stdout and stderr while streaming", async () => {
-  process.env.AFS_BIN = process.execPath
-  process.env.AFS_CLI = process.execPath
+  process.env.AFS_BIN = node
+  process.env.AFS_CLI = node
   for (const stream of ["stdout", "stderr"] as const) {
     const started = performance.now()
     await expect(
-      runAfsJson(["-e", `process.${stream}.write("x".repeat(4096)); await Bun.sleep(5000)`], {
+      runAfsJson(["-e", `process.${stream}.write("x".repeat(4096)); setTimeout(() => {}, 5000)`], {
         timeoutMs: 2_000,
         maxBytes: 128,
       }),
@@ -161,15 +162,15 @@ test("timeouts terminate descendants after the direct parent exits", async () =>
   const directory = await mkdtemp(join(tmpdir(), "halext-bridge-tree-test-"))
   paths.push(directory)
   const pidPath = join(directory, "descendant.pid")
-  process.env.AFS_BIN = process.execPath
-  process.env.AFS_CLI = process.execPath
+  process.env.AFS_BIN = node
+  process.env.AFS_CLI = node
 
   const started = performance.now()
   await expect(
     runAfsJson(
       [
         "-e",
-        `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdout: "inherit", stderr: "inherit", detached: process.platform === "win32" }); await Bun.write(${JSON.stringify(pidPath)}, String(child.pid)); process.exit(0)`,
+        `const { spawn } = require("node:child_process"); const { writeFileSync } = require("node:fs"); const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { stdio: ["ignore", "inherit", "inherit"], detached: process.platform === "win32" }); writeFileSync(${JSON.stringify(pidPath)}, String(child.pid)); process.exit(0)`,
       ],
       { timeoutMs: process.platform === "win32" ? 10_000 : 200 },
     ),
@@ -186,14 +187,14 @@ signalTest("successful parents cannot leave ignored-stdio descendants", async ()
   const directory = await mkdtemp(join(tmpdir(), "halext-bridge-orphan-test-"))
   paths.push(directory)
   const pidPath = join(directory, "descendant.pid")
-  process.env.AFS_BIN = process.execPath
-  process.env.AFS_CLI = process.execPath
+  process.env.AFS_BIN = node
+  process.env.AFS_CLI = node
 
   await expect(
     runAfsJson(
       [
         "-e",
-        `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }); await Bun.write(${JSON.stringify(pidPath)}, String(child.pid)); console.log("{}"); process.exit(0)`,
+        `const { spawn } = require("node:child_process"); const { writeFileSync } = require("node:fs"); const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { stdio: "ignore" }); writeFileSync(${JSON.stringify(pidPath)}, String(child.pid)); console.log("{}"); process.exit(0)`,
       ],
       { timeoutMs: 2_000 },
     ),
@@ -211,14 +212,14 @@ test.skipIf(process.platform !== "win32")(
     const directory = await mkdtemp(join(tmpdir(), "halext-bridge-windows-orphan-test-"))
     paths.push(directory)
     const pidPath = join(directory, "descendant.pid")
-    process.env.AFS_BIN = process.execPath
-    process.env.AFS_CLI = process.execPath
+    process.env.AFS_BIN = node
+    process.env.AFS_CLI = node
 
     await expect(
       runAfsJson(
         [
           "-e",
-          `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore", detached: true }); await Bun.write(${JSON.stringify(pidPath)}, String(child.pid)); console.log("{}"); process.exit(0)`,
+          `const { spawn } = require("node:child_process"); const { writeFileSync } = require("node:fs"); const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { stdio: "ignore", detached: true }); writeFileSync(${JSON.stringify(pidPath)}, String(child.pid)); console.log("{}"); process.exit(0)`,
         ],
         { timeoutMs: 10_000 },
       ),
@@ -232,8 +233,10 @@ test.skipIf(process.platform !== "win32")(
 
 test("client abort terminates the server-side AFS process tree", async () => {
   const directory = await fakeCli(`
-const child = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 1000)"], { stdout: "inherit", stderr: "inherit" })
-await Bun.write(process.env.FAKE_PID_PATH, String(child.pid))
+const { spawn } = require("node:child_process")
+const { writeFileSync } = require("node:fs")
+const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "inherit", "inherit"] })
+writeFileSync(process.env.FAKE_PID_PATH, String(child.pid))
 setInterval(() => {}, 1_000)
   `)
   const pidPath = join(directory, "request.pid")
@@ -257,8 +260,10 @@ setInterval(() => {}, 1_000)
 
 test("graceful shutdown terminates active AFS child trees", async () => {
   const directory = await fakeCli(`
-const child = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 1000)"], { stdout: "inherit", stderr: "inherit" })
-await Bun.write(process.env.FAKE_PID_PATH, String(child.pid))
+const { spawn } = require("node:child_process")
+const { writeFileSync } = require("node:fs")
+const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "inherit", "inherit"] })
+writeFileSync(process.env.FAKE_PID_PATH, String(child.pid))
 setInterval(() => {}, 1_000)
   `)
   const pidPath = join(directory, "shutdown.pid")
@@ -271,7 +276,9 @@ setInterval(() => {}, 1_000)
   const pid = await waitForPid(pidPath)
   expect(pid).toBeDefined()
 
+  const started = performance.now()
   await shutdownAfsProcesses()
+  expect(performance.now() - started).toBeLessThan(3_000)
   expect(await result).toBeInstanceOf(Error)
   for (let attempt = 0; attempt < 20 && alive(pid!); attempt += 1) await Bun.sleep(250)
   expect(alive(pid!)).toBeFalse()
@@ -280,7 +287,8 @@ setInterval(() => {}, 1_000)
 signalTest("termination kills a running child", async () => {
   const directory = await fakeCli(`
 process.on("SIGTERM", () => {})
-await Bun.write(process.env.FAKE_PID_PATH, String(process.pid))
+const { writeFileSync } = require("node:fs")
+writeFileSync(process.env.FAKE_PID_PATH, String(process.pid))
 setInterval(() => {}, 1_000)
   `)
   const pidPath = join(directory, "pid")

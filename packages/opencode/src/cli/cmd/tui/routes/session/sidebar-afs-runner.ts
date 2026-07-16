@@ -1,5 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process"
 
+const WINDOWS_NATIVE_TIMEOUT = 1_000
+const WINDOWS_SHELL_TIMEOUT = 7_000
+const WINDOWS_PROCESS_LIMIT = 1_024
+
 export type Result = {
   code: number
   stdout: Buffer
@@ -46,39 +50,120 @@ exit $LASTEXITCODE
 }
 
 async function directWindowsChildren(parentPid: number) {
-  // Toolhelp is a local kernel snapshot; unlike WMI/PowerShell it adds no
-  // multi-second helper startup to every successful sidebar poll.
-  const { dlopen, ptr } = await import("bun:ffi")
-  const pointerSize = process.arch === "ia32" ? 4 : 8
-  const entrySize = pointerSize === 8 ? 568 : 556
-  const parentOffset = pointerSize === 8 ? 32 : 24
-  const kernel32 = dlopen("kernel32.dll", {
-    CreateToolhelp32Snapshot: { args: ["u32", "u32"], returns: "u64" },
-    Process32FirstW: { args: ["u64", "ptr"], returns: "i32" },
-    Process32NextW: { args: ["u64", "ptr"], returns: "i32" },
-    CloseHandle: { args: ["u64"], returns: "i32" },
-  } as const)
-  const entry = new Uint8Array(entrySize)
-  const view = new DataView(entry.buffer, entry.byteOffset, entry.byteLength)
-  view.setUint32(0, entrySize, true)
-  const snapshot = kernel32.symbols.CreateToolhelp32Snapshot(0x00000002, 0)
-  if (snapshot === 0n || snapshot === 0xffffffffffffffffn) {
-    kernel32.close()
-    throw new Error("CreateToolhelp32Snapshot failed")
+  if (process.arch === "x64") {
+    try {
+      return await new Promise<number[]>((resolve, reject) => {
+        let settled = false
+        const finish = (value: number[] | Error) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          if (value instanceof Error) reject(value)
+          else resolve(value)
+        }
+        const timer = setTimeout(() => finish(new Error("Windows process snapshot timed out")), WINDOWS_NATIVE_TIMEOUT)
+        void import("@vscode/windows-process-tree")
+          .then((api) => {
+            api.getAllProcesses((items) => {
+              if (
+                items.length === 0 ||
+                items.length >= WINDOWS_PROCESS_LIMIT ||
+                !items.some((item) => item.pid === process.pid)
+              ) {
+                finish(new Error("Windows process snapshot was empty or truncated"))
+                return
+              }
+              finish(items.filter((item) => item.ppid === parentPid).map((item) => item.pid))
+            })
+          })
+          .catch((error) => finish(error instanceof Error ? error : new Error(String(error))))
+      })
+    } catch {}
   }
-  try {
-    let more = kernel32.symbols.Process32FirstW(snapshot, ptr(entry))
-    if (!more) throw new Error("Process32FirstW failed")
-    const children: number[] = []
-    while (more) {
-      if (view.getUint32(parentOffset, true) === parentPid) children.push(view.getUint32(8, true))
-      more = kernel32.symbols.Process32NextW(snapshot, ptr(entry))
+
+  // The Microsoft native addon currently ships x64 only. Keep ARM64 and
+  // native-load failures fail-closed with a bounded system-CIM fallback.
+  const script = `$ErrorActionPreference = 'Stop'
+$self = [uint32]$PID
+Get-CimInstance -Query "SELECT ProcessId,ParentProcessId FROM Win32_Process WHERE ProcessId = $self OR ParentProcessId = ${parentPid}" |
+  ForEach-Object { [Console]::Out.WriteLine(('{0}:{1}' -f [uint32]$_.ProcessId, [uint32]$_.ParentProcessId)) }`
+  return new Promise<number[]>((resolve, reject) => {
+    let child: ChildProcess | undefined
+    let settled = false
+    let chunks: Buffer[] = []
+    let size = 0
+    const finish = (value: number[] | Error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      child?.stdout?.destroy()
+      child?.unref()
+      if (value instanceof Error) reject(value)
+      else resolve(value)
     }
-    return children
-  } finally {
-    kernel32.symbols.CloseHandle(snapshot)
-    kernel32.close()
-  }
+    const launch = (file: "powershell.exe" | "pwsh.exe") => {
+      if (settled) return
+      chunks = []
+      size = 0
+      let current: ChildProcess
+      try {
+        current = spawn(
+          file,
+          ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+          { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
+        )
+        child = current
+      } catch (error) {
+        if (file === "pwsh.exe") launch("powershell.exe")
+        else finish(error instanceof Error ? error : new Error(String(error)))
+        return
+      }
+      current.stdout?.on("data", (chunk: Buffer) => {
+        size += chunk.byteLength
+        if (size > 64 * 1024) {
+          try {
+            current.kill("SIGKILL")
+          } finally {
+            finish(new Error("Windows process snapshot output exceeded its limit"))
+          }
+          return
+        }
+        chunks.push(chunk)
+      })
+      current.once("error", (error) => {
+        if (child !== current || settled) return
+        if (file === "pwsh.exe") launch("powershell.exe")
+        else finish(error)
+      })
+      current.once("close", (code) => {
+        if (child !== current || settled) return
+        if (code !== 0) {
+          if (file === "pwsh.exe") launch("powershell.exe")
+          else finish(new Error("Windows process snapshot command failed"))
+          return
+        }
+        const lines = Buffer.concat(chunks)
+          .toString()
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+        const rows = lines.map((line) => /^(\d+):(\d+)$/.exec(line))
+        if (rows.some((row) => !row) || !current.pid || !rows.some((row) => Number(row?.[1]) === current.pid)) {
+          finish(new Error("Windows process snapshot output was invalid"))
+          return
+        }
+        finish(rows.filter((row) => Number(row?.[2]) === parentPid).map((row) => Number(row?.[1])))
+      })
+    }
+    const timer = setTimeout(() => {
+      try {
+        child?.kill("SIGKILL")
+      } finally {
+        finish(new Error("Windows process snapshot command timed out"))
+      }
+    }, WINDOWS_SHELL_TIMEOUT)
+    launch("pwsh.exe")
+  })
 }
 
 function launchTaskkill(pid: number) {
@@ -101,9 +186,12 @@ function launchTaskkill(pid: number) {
       resolve(ok)
     }
     const timer = setTimeout(() => {
-      child.kill("SIGKILL")
-      child.unref()
-      finish(false)
+      try {
+        child.kill("SIGKILL")
+      } finally {
+        child.unref()
+        finish(false)
+      }
     }, 1_000)
     child.once("close", (code) => finish(code === 0))
     child.once("error", () => finish(false))
@@ -123,14 +211,7 @@ async function cleanupWindowsDescendants(pid: number): Promise<DescendantCleanup
 }
 
 function windows(proc: ChildProcess, pid: number, cleanupDescendants: () => Promise<DescendantCleanup>) {
-  try {
-    const child = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
-      stdio: "ignore",
-      windowsHide: true,
-    })
-    child.once("error", () => {})
-    child.unref()
-  } catch {}
+  void launchTaskkill(pid)
 
   // A parent can exit while a descendant keeps an inherited pipe open. In
   // that case taskkill cannot root the tree at the dead PID, so discover the

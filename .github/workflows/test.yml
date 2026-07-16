@@ -46,6 +46,18 @@ jobs:
           git config --global user.email "bot@opencode.ai"
           git config --global user.name "opencode"
 
+      - name: Build bridge artifact
+        run: bun --cwd packages/halext-bridge run build
+
+      - name: Smoke bridge artifact
+        run: >-
+          bun --cwd packages/halext-bridge -e
+          'process.env.AFS_BIN = "node";
+          process.env.AFS_CLI = "node";
+          const { runAfsJson } = await import("./dist/server.js");
+          const value = await runAfsJson(["-e", "console.log(JSON.stringify({ ok: true }))"], { timeoutMs: 10_000 });
+          if (value.ok !== true) process.exit(1)'
+
       - name: Run unit tests
         # GitHub-hosted runners are smaller than the fork's former Blacksmith
         # workers. Serializing package tasks prevents unrelated suites from
