@@ -1,6 +1,20 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
+import { chmod, mkdir, readFile } from "fs/promises"
 import { join } from "path"
 import { AFSContextPlugin } from "../../../../.opencode/plugins/afs-context"
+import { tmpdir } from "../fixture/fixture"
+
+const env = {
+  bin: process.env.AFS_BIN,
+  cli: process.env.AFS_CLI,
+}
+
+afterEach(() => {
+  if (env.bin === undefined) delete process.env.AFS_BIN
+  else process.env.AFS_BIN = env.bin
+  if (env.cli === undefined) delete process.env.AFS_CLI
+  else process.env.AFS_CLI = env.cli
+})
 
 describe("plugin.afs-context", () => {
   const dir = "/tmp/repo/packages/opencode"
@@ -76,10 +90,70 @@ describe("plugin.afs-context", () => {
     expect(pack.output).toContain("artifact")
   })
 
-  test("falls back to directory when worktree is root slash", async () => {
+  test("falls back to directory for the non-project worktree sentinel", async () => {
     const plugin = await AFSContextPlugin({ directory: dir, worktree: "/" } as any)
     const out = { args: {} as Record<string, unknown> }
     await plugin["tool.execute.before"]?.({ tool: "afs_local_context_status" } as any, out as any)
     expect(out.args.context_path).toBe(join(dir, ".context"))
+  })
+
+  test.skipIf(process.platform === "win32")(
+    "loads grounding once per session with AFS_BIN and AFS_CLI routing",
+    async () => {
+      await using tmp = await tmpdir()
+      const context = join(tmp.path, ".context")
+      const count = join(tmp.path, "count")
+      const bin = join(tmp.path, "afs")
+      await mkdir(context)
+      await Bun.write(
+        bin,
+        `#!/usr/bin/env bun\nimport { appendFileSync } from "fs"\nappendFileSync(${JSON.stringify(count)}, "1\\n")\nconsole.log("grounding:" + process.argv.at(-1))\n`,
+      )
+      await chmod(bin, 0o755)
+      process.env.AFS_BIN = bin
+      process.env.AFS_CLI = "/not/the/selected/binary"
+
+      const plugin = await AFSContextPlugin({ directory: tmp.path, worktree: tmp.path } as any)
+      for (const sessionID of ["session-a", "session-b", "session-a"]) {
+        const out = { system: [] as string[] }
+        await plugin["experimental.chat.system.transform"]?.({ sessionID } as any, out as any)
+        expect(out.system.at(-1)).toBe(`grounding:${tmp.path}`)
+      }
+
+      delete process.env.AFS_BIN
+      process.env.AFS_CLI = bin
+      const fallback = { system: [] as string[] }
+      await plugin["experimental.chat.system.transform"]?.({ sessionID: "session-c" } as any, fallback as any)
+      expect(fallback.system.at(-1)).toBe(`grounding:${tmp.path}`)
+
+      const out = { system: [] as string[] }
+      await plugin["experimental.chat.system.transform"]?.({} as any, out as any)
+      expect(out.system).toHaveLength(1)
+      expect((await readFile(count, "utf8")).trim().split("\n")).toHaveLength(3)
+    },
+  )
+
+  test.skipIf(process.platform === "win32")("caches empty grounding and coalesces concurrent transforms", async () => {
+    await using tmp = await tmpdir()
+    const context = join(tmp.path, ".context")
+    const count = join(tmp.path, "count")
+    const bin = join(tmp.path, "afs")
+    await mkdir(context)
+    await Bun.write(
+      bin,
+      `#!/usr/bin/env bun\nimport { appendFileSync } from "fs"\nappendFileSync(${JSON.stringify(count)}, "1\\n")\nawait Bun.sleep(100)\n`,
+    )
+    await chmod(bin, 0o755)
+    process.env.AFS_BIN = bin
+
+    const plugin = await AFSContextPlugin({ directory: tmp.path, worktree: tmp.path } as any)
+    const run = async () => {
+      const out = { system: [] as string[] }
+      await plugin["experimental.chat.system.transform"]?.({ sessionID: "session-empty" } as any, out as any)
+      expect(out.system).toHaveLength(1)
+    }
+    await Promise.all([run(), run()])
+    await run()
+    expect((await readFile(count, "utf8")).trim().split("\n")).toHaveLength(1)
   })
 })
