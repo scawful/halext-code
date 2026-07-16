@@ -135,24 +135,35 @@ describe("sidebar AFS runner", () => {
   test.skipIf(process.platform === "win32")("rejects a successful parent with ignored-stdio descendants", async () => {
     await using tmp = await tmpdir()
     const marker = join(tmp.path, "descendant.pid")
-    const result = await run(
+    const abort = new AbortController()
+    const pending = run(
       [
         "node",
         "-e",
         `const { spawn } = require("node:child_process"); const { writeFileSync } = require("node:fs"); const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { stdio: "ignore" }); writeFileSync(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
       ],
       {
-        signal: new AbortController().signal,
-        timeout: 2_000,
+        signal: abort.signal,
+        timeout: 60_000,
         limit: 1_024,
       },
     )
+    const pid = await waitForPid(marker)
+    if (pid === undefined) {
+      abort.abort()
+      await pending
+    }
+    expect(pid).toBeDefined()
 
-    const pid = Number(await Bun.file(marker).text())
-    expect(pid).toBeGreaterThan(0)
-    for (let attempt = 0; attempt < 20 && alive(pid); attempt++) await Bun.sleep(50)
-    expect(alive(pid)).toBeFalse()
+    const deadline = Symbol("parent-close cleanup deadline")
+    const result = await Promise.race([pending, Bun.sleep(5_000).then(() => deadline)])
+    if (result === deadline) {
+      abort.abort()
+      await pending
+    }
     expect(result).toBeUndefined()
+    for (let attempt = 0; attempt < 20 && alive(pid!); attempt++) await Bun.sleep(50)
+    expect(alive(pid!)).toBeFalse()
   })
 
   test.skipIf(process.platform !== "win32")(
