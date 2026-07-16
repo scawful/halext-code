@@ -95,7 +95,9 @@ exit 42
     }, 5_000)
     timer.unref()
     cleaner.once("error", () => finish("error"))
-    cleaner.once("close", (code) => finish(code === 0 ? "clean" : code === 42 ? "descendants" : "error"))
+    // Bun on Windows can delay `close` for inherited provider handles after
+    // PowerShell exits. stdio is ignored, so `exit` is sufficient here.
+    cleaner.once("exit", (code) => finish(code === 0 ? "clean" : code === 42 ? "descendants" : "error"))
   })
 }
 
