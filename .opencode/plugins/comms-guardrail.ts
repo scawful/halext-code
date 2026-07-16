@@ -13,7 +13,8 @@ import { detectComms, extractDraft, POLICY } from "./comms-guardrail/lib"
  * EVERY permission request that config did not already `deny`
  * (see packages/opencode/src/permission/service.ts). Because that hook runs
  * regardless of the evaluated allow / allow-always decision, escalating a matched
- * comms command to `status: "ask"` here is un-bypassable by a stale allow-always.
+ * comms command to `status: "ask"` here overrides a stale allow-always for commands
+ * the detector recognizes.
  * The extracted draft is stashed on the request `metadata` (a free-form field that
  * is published on the `permission.asked` event) so the confirmation dialog can show
  * the user exactly what would be sent.
@@ -22,7 +23,10 @@ import { detectComms, extractDraft, POLICY } from "./comms-guardrail/lib"
  * plugins/*.ts glob because the loader invokes every export of a plugin module).
  *
  * Scope: this only ESCALATES (allow -> ask). It never downgrades a decision, and a
- * config `deny` is honored before this hook ever runs.
+ * config `deny` is honored before this hook ever runs. Detection is deliberately
+ * bounded and best-effort: it covers known literal commands and common wrapper
+ * forms, not dynamically constructed commands, aliases/functions, sourced scripts,
+ * encoded payloads, or arbitrary interpreter behavior.
  */
 export const CommsGuardrailPlugin: Plugin = async () => {
   return {
@@ -43,8 +47,8 @@ export const CommsGuardrailPlugin: Plugin = async () => {
 
         // Surface the draft for the confirmation dialog. On an unparseable payload we
         // still ask and show the raw command (fail-safe).
-        const command = patterns.join("\n")
-        const draft = extractDraft(command)
+        const command = matched.command
+        const draft = extractDraft(matched.payload)
         const metadata = ((input as any).metadata ??= {}) as Record<string, unknown>
         metadata.comms_guardrail = {
           channel: matched.channel,
