@@ -69,6 +69,7 @@ describe("plugin.afs-context bounded runner", () => {
     async () => {
       await using tmp = await tmpdir()
       const marker = join(tmp.path, "descendant.pid")
+      const start = Date.now()
       const text = await run(
         [
           process.execPath,
@@ -77,12 +78,14 @@ describe("plugin.afs-context bounded runner", () => {
         ],
         { timeout: 500, limit: 1_024 },
       )
+      const elapsed = Date.now() - start
 
-      expect(text).toBeNull()
       const pid = Number(await Bun.file(marker).text())
       expect(pid).toBeGreaterThan(0)
       for (let attempt = 0; attempt < 20 && processIsAlive(pid); attempt++) await Bun.sleep(250)
       expect(processIsAlive(pid)).toBeFalse()
+      expect(text).toBeNull()
+      expect(elapsed).toBeLessThan(2_000)
     },
   )
 })
