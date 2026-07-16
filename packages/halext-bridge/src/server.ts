@@ -1,9 +1,6 @@
-import { randomUUID } from "node:crypto"
-import { readFileSync, unlinkSync } from "node:fs"
 import { open, readdir, realpath, stat } from "node:fs/promises"
 import { spawn, type ChildProcess } from "node:child_process"
-import { tmpdir } from "node:os"
-import { extname, join, resolve, relative, sep } from "node:path"
+import { extname, resolve, relative, sep } from "node:path"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
@@ -220,107 +217,85 @@ function trackedCleanup<T>(task: Promise<T>) {
   return task
 }
 
-function cleanupWindowsDescendants(proc: ChildProcess, pid: number): Promise<DescendantCleanup> {
-  const existing = windowsCleanups.get(proc)
-  if (existing) return existing
-
-  const resultPath = join(tmpdir(), `hcode-afs-bridge-cleanup-${process.pid}-${randomUUID()}.txt`)
-  const encodedResultPath = Buffer.from(resultPath).toString("base64")
-  const script = `
-$ErrorActionPreference = 'Stop'
-$resultPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedResultPath}'))
-try {
-  $rootPid = [uint32]${pid}
-  $targets = @(
-    Get-CimInstance -Query "SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = $rootPid" |
-      ForEach-Object { [uint32]$_.ProcessId }
-  )
-  $ErrorActionPreference = 'SilentlyContinue'
-  if ($targets.Count -eq 0) {
-    [IO.File]::WriteAllText($resultPath, 'clean', [Text.Encoding]::ASCII)
-    exit 0
+async function directWindowsChildren(parentPid: number) {
+  // Toolhelp is a local kernel snapshot; unlike WMI/PowerShell it adds no
+  // multi-second helper startup to every successful sidebar poll.
+  const { dlopen, ptr } = await import("bun:ffi")
+  const pointerSize = process.arch === "ia32" ? 4 : 8
+  const entrySize = pointerSize === 8 ? 568 : 556
+  const parentOffset = pointerSize === 8 ? 32 : 24
+  const kernel32 = dlopen("kernel32.dll", {
+    CreateToolhelp32Snapshot: { args: ["u32", "u32"], returns: "ptr" },
+    Process32FirstW: { args: ["ptr", "ptr"], returns: "i32" },
+    Process32NextW: { args: ["ptr", "ptr"], returns: "i32" },
+    CloseHandle: { args: ["ptr"], returns: "i32" },
+  } as const)
+  const entry = new Uint8Array(entrySize)
+  const view = new DataView(entry.buffer, entry.byteOffset, entry.byteLength)
+  view.setUint32(0, entrySize, true)
+  const snapshot = kernel32.symbols.CreateToolhelp32Snapshot(0x00000002, 0)
+  if (!snapshot) {
+    kernel32.close()
+    throw new Error("CreateToolhelp32Snapshot failed")
   }
-  # Report discovery before taskkill waits for an inherited provider handle;
-  # the caller can fail closed immediately while this helper drains each tree.
-  [IO.File]::WriteAllText($resultPath, 'descendants', [Text.Encoding]::ASCII)
-  foreach ($targetPid in $targets) {
-    & taskkill.exe /PID $targetPid /T /F *> $null
+  try {
+    let more = kernel32.symbols.Process32FirstW(snapshot, ptr(entry))
+    if (!more) throw new Error("Process32FirstW failed")
+    const children: number[] = []
+    while (more) {
+      if (view.getUint32(parentOffset, true) === parentPid) children.push(view.getUint32(8, true))
+      more = kernel32.symbols.Process32NextW(snapshot, ptr(entry))
+    }
+    return children
+  } finally {
+    kernel32.symbols.CloseHandle(snapshot)
+    kernel32.close()
   }
-} catch {
-  try { [IO.File]::WriteAllText($resultPath, 'error', [Text.Encoding]::ASCII) } catch {}
 }
-exit 0
-`
 
-  const task = new Promise<DescendantCleanup>((resolve) => {
-    let cleaner: ChildProcess | undefined
-
+function launchTaskkill(pid: number) {
+  return new Promise<boolean>((resolve) => {
+    let child: ChildProcess
+    try {
+      child = spawn("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true,
+      })
+    } catch {
+      resolve(false)
+      return
+    }
     let settled = false
-    let poll: ReturnType<typeof setInterval> | undefined
-    const finish = (result: DescendantCleanup) => {
+    const finish = (launched: boolean) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      if (poll) clearInterval(poll)
-      try {
-        unlinkSync(resultPath)
-      } catch {}
-      cleaner?.unref()
-      resolve(result)
+      child.unref()
+      resolve(launched)
     }
     const timer = setTimeout(() => {
-      cleaner?.kill("SIGKILL")
-      finish("error")
-    }, 7_000)
-    timer.unref()
-    const readResult = () => {
-      let result = ""
-      try {
-        result = readFileSync(resultPath, "ascii").trim()
-      } catch {}
-      return result
-    }
-    poll = setInterval(() => {
-      // Descendant discovery is the fail-closed verdict; report it before
-      // taskkill drains. Clean/error helpers exit immediately, so wait for
-      // `close` and avoid leaving a helper behind between short polls.
-      if (readResult() === "descendants") finish("descendants")
-    }, 25)
-    poll.unref()
-
-    const launch = (command: "powershell.exe" | "pwsh.exe") => {
-      if (settled) return
-      let current: ChildProcess
-      try {
-        current = spawn(
-          command,
-          ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-          { stdio: "ignore", windowsHide: true },
-        )
-        cleaner = current
-      } catch {
-        if (command === "powershell.exe") launch("pwsh.exe")
-        else finish("error")
-        return
-      }
-      current.once("error", () => {
-        if (cleaner !== current || settled) return
-        if (command === "powershell.exe") launch("pwsh.exe")
-        else finish("error")
-      })
-      current.once("close", () => {
-        if (cleaner !== current || settled) return
-        const result = readResult()
-        if (result === "clean" || result === "descendants" || result === "error") finish(result)
-        else if (command === "powershell.exe") launch("pwsh.exe")
-        else finish("error")
-      })
-    }
-    // Windows PowerShell is present on every supported Windows host and has
-    // materially lower cold-start latency on GitHub's runners. PowerShell 7
-    // remains the compatibility fallback.
-    launch("powershell.exe")
+      child.kill("SIGKILL")
+      finish(false)
+    }, 1_000)
+    child.once("spawn", () => finish(true))
+    child.once("error", () => finish(false))
   })
+}
+
+function cleanupWindowsDescendants(proc: ChildProcess, pid: number): Promise<DescendantCleanup> {
+  const existing = windowsCleanups.get(proc)
+  if (existing) return existing
+  const task = (async (): Promise<DescendantCleanup> => {
+    let targets: number[]
+    try {
+      targets = await directWindowsChildren(pid)
+    } catch {
+      return "error"
+    }
+    if (targets.length === 0) return "clean"
+    const launched = await Promise.all(targets.map(launchTaskkill))
+    return launched.every(Boolean) ? "descendants" : "error"
+  })()
   const tracked = trackedCleanup(task)
   windowsCleanups.set(proc, tracked)
   return tracked
