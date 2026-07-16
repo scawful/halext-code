@@ -1,10 +1,10 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test"
-import { chmod } from "node:fs/promises"
 import { join } from "node:path"
 import { run } from "../../src/cli/cmd/tui/routes/session/sidebar-afs-runner"
 import { tmpdir } from "../fixture/fixture"
 
-setDefaultTimeout(60_000)
+setDefaultTimeout(120_000)
+const node = process.platform === "win32" ? "node.exe" : "node"
 
 function alive(pid: number) {
   try {
@@ -13,6 +13,20 @@ function alive(pid: number) {
   } catch {
     return false
   }
+}
+
+async function waitForPid(path: string, timeout = 45_000) {
+  const deadline = Date.now() + timeout
+  do {
+    const pid =
+      Number(
+        await Bun.file(path)
+          .text()
+          .catch(() => ""),
+      ) || undefined
+    if (pid !== undefined) return pid
+    await Bun.sleep(25)
+  } while (Date.now() < deadline)
 }
 
 describe("sidebar AFS runner", () => {
@@ -28,19 +42,9 @@ describe("sidebar AFS runner", () => {
   })
 
   test("passes arguments without shell interpretation", async () => {
-    await using tmp = await tmpdir()
-    const file = join(tmp.path, process.platform === "win32" ? "afs.cmd" : "afs")
-    const script = "console.log(JSON.stringify(process.argv.slice(2)))"
-    if (process.platform === "win32") {
-      const source = join(tmp.path, "afs.cjs")
-      await Bun.write(source, script)
-      await Bun.write(file, `@echo off\r\nnode "${source}" %*\r\n`)
-    } else {
-      await Bun.write(file, `#!/usr/bin/env node\n${script}\n`)
-      await chmod(file, 0o755)
-    }
-    const args = ["literal & value", 'quote"value']
-    const result = await run([file, ...args], {
+    const script = "console.log(JSON.stringify(process.argv.slice(1)))"
+    const args = ["literal&value", "%PATH%", "caret^value", "pipe|value", "redirect>value", 'quote"value']
+    const result = await run([node, "-e", script, ...args], {
       signal: new AbortController().signal,
       timeout: 10_000,
       limit: 1_024,
@@ -50,15 +54,56 @@ describe("sidebar AFS runner", () => {
     expect(JSON.parse(result?.stdout.toString() ?? "null")).toEqual(args)
   })
 
+  test.skipIf(process.platform !== "win32")("rejects Windows batch launchers without executing them", async () => {
+    await using tmp = await tmpdir()
+    const file = join(tmp.path, "afs.cmd")
+    const marker = join(tmp.path, "batch-ran")
+    await Bun.write(file, `@echo off\r\necho ran>"${marker}"\r\n`)
+
+    const result = await run([file], {
+      signal: new AbortController().signal,
+      timeout: 10_000,
+      limit: 1_024,
+    })
+
+    expect(result).toBeUndefined()
+    expect(await Bun.file(marker).exists()).toBeFalse()
+  })
+
   test("bounds stdout and stderr while they stream", async () => {
+    await using tmp = await tmpdir()
     for (const stream of ["stdout", "stderr"] as const) {
-      const result = await run(["node", "-e", `process.${stream}.write("x".repeat(4096))`], {
-        signal: new AbortController().signal,
-        timeout: 10_000,
-        limit: 128,
-      })
+      const marker = join(tmp.path, `${stream}.pid`)
+      const abort = new AbortController()
+      const pending = run(
+        [
+          node,
+          "-e",
+          `require("node:fs").writeFileSync(${JSON.stringify(marker)}, String(process.pid)); process.${stream}.write("x".repeat(4096)); setInterval(() => {}, 1000)`,
+        ],
+        {
+          signal: abort.signal,
+          timeout: 60_000,
+          limit: 128,
+        },
+      )
+      const pid = await waitForPid(marker)
+      if (pid === undefined) {
+        abort.abort()
+        await pending
+      }
+      expect(pid).toBeDefined()
+
+      const deadline = Symbol("output cap deadline")
+      const result = await Promise.race([pending, Bun.sleep(5_000).then(() => deadline)])
+      if (result === deadline) {
+        abort.abort()
+        await pending
+      }
 
       expect(result).toBeUndefined()
+      for (let attempt = 0; attempt < 20 && alive(pid!); attempt++) await Bun.sleep(250)
+      expect(alive(pid!)).toBeFalse()
     }
   })
 

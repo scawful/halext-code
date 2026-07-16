@@ -37,6 +37,10 @@ TypeScript rewrite.
   When the CLI is overridden, the launcher leaves `AFS_VENV` unset unless the
   caller supplied it explicitly, so one checkout cannot inherit another's
   Python environment.
+  On Windows, `AFS_BIN`/`AFS_CLI` must resolve to a native executable (normally
+  the Python installer's `afs.exe` console launcher). The bridge and sidebar
+  reject `.cmd`/`.bat` launchers rather than route request-derived arguments
+  through a command shell.
   The project-local MCP command uses `AFS_CLI` directly because OpenCode config
   interpolation has no fallback syntax; non-wrapper launches that need the MCP
   server must set `AFS_CLI` explicitly.

@@ -186,29 +186,10 @@ function afsCli() {
 function command(cmd: string[]): [string, ...string[]] {
   const file = cmd[0]
   if (!file) throw new Error("Command is required")
-  if (process.platform !== "win32" || !/\.(cmd|bat)$/i.test(file)) return [file, ...cmd.slice(1)]
-  // Batch files need a Windows command host. Encode argv before PowerShell
-  // sees it so paths and user-supplied values never become shell syntax.
-  const data = Buffer.from(JSON.stringify({ exe: file, args: cmd.slice(1) })).toString("base64")
-  const script = `
-$ErrorActionPreference = 'Stop'
-$json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}'))
-$payload = ConvertFrom-Json -InputObject $json
-$exe = [string]$payload.exe
-$rest = @($payload.args | ForEach-Object { [string]$_ })
-& $exe @rest
-exit $LASTEXITCODE
-`
-  return [
-    "powershell.exe",
-    "-NoLogo",
-    "-NoProfile",
-    "-NonInteractive",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-Command",
-    script,
-  ]
+  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(file)) {
+    throw new Error("Windows batch AFS launchers are unsupported; set AFS_BIN or AFS_CLI to a native executable")
+  }
+  return [file, ...cmd.slice(1)]
 }
 
 function trackedCleanup<T>(task: Promise<T>) {
