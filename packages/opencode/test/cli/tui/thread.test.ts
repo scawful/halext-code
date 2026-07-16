@@ -1,6 +1,7 @@
-import { describe, expect, mock, test } from "bun:test"
+import { afterAll, describe, expect, mock, spyOn, test } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
+import { Instance } from "../../../src/project/instance"
 import { tmpdir } from "../../fixture/fixture"
 
 const stop = new Error("stop")
@@ -74,14 +75,12 @@ mock.module("@/config/tui", () => ({
   },
 }))
 
-mock.module("@/project/instance", () => ({
-  Instance: {
-    provide: async (input: { directory: string; fn: () => Promise<unknown> | unknown }) => {
-      seen.inst.push(input.directory)
-      return input.fn()
-    },
-  },
-}))
+const provide = spyOn(Instance, "provide").mockImplementation(async (input) => {
+  seen.inst.push(input.directory)
+  return input.fn()
+})
+
+afterAll(() => provide.mockRestore())
 
 describe("tui thread", () => {
   async function call(project?: string) {

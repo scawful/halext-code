@@ -135,24 +135,35 @@ describe("sidebar AFS runner", () => {
   test.skipIf(process.platform === "win32")("rejects a successful parent with ignored-stdio descendants", async () => {
     await using tmp = await tmpdir()
     const marker = join(tmp.path, "descendant.pid")
-    const result = await run(
+    const abort = new AbortController()
+    const pending = run(
       [
         "node",
         "-e",
         `const { spawn } = require("node:child_process"); const { writeFileSync } = require("node:fs"); const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { stdio: "ignore" }); writeFileSync(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
       ],
       {
-        signal: new AbortController().signal,
-        timeout: 2_000,
+        signal: abort.signal,
+        timeout: 60_000,
         limit: 1_024,
       },
     )
+    const pid = await waitForPid(marker)
+    if (pid === undefined) {
+      abort.abort()
+      await pending
+    }
+    expect(pid).toBeDefined()
 
-    const pid = Number(await Bun.file(marker).text())
-    expect(pid).toBeGreaterThan(0)
-    for (let attempt = 0; attempt < 20 && alive(pid); attempt++) await Bun.sleep(50)
-    expect(alive(pid)).toBeFalse()
+    const deadline = Symbol("parent-close cleanup deadline")
+    const result = await Promise.race([pending, Bun.sleep(5_000).then(() => deadline)])
+    if (result === deadline) {
+      abort.abort()
+      await pending
+    }
     expect(result).toBeUndefined()
+    for (let attempt = 0; attempt < 20 && alive(pid!); attempt++) await Bun.sleep(50)
+    expect(alive(pid!)).toBeFalse()
   })
 
   test.skipIf(process.platform !== "win32")(
@@ -184,16 +195,39 @@ describe("sidebar AFS runner", () => {
   )
 
   test("honors a caller abort before the wall-clock timeout", async () => {
+    await using tmp = await tmpdir()
+    const marker = join(tmp.path, "abort.pid")
     const abort = new AbortController()
-    const started = performance.now()
-    const result = run(["node", "-e", "setTimeout(() => {}, 5000)"], {
-      signal: abort.signal,
-      timeout: 2_000,
-      limit: 1_024,
-    })
-    setTimeout(() => abort.abort(), 25)
+    const pending = run(
+      [
+        node,
+        "-e",
+        `require("node:fs").writeFileSync(${JSON.stringify(marker)}, String(process.pid)); setInterval(() => {}, 1000)`,
+      ],
+      {
+        signal: abort.signal,
+        timeout: 60_000,
+        limit: 1_024,
+      },
+    )
+    const pid = await waitForPid(marker)
+    if (pid === undefined) {
+      abort.abort()
+      await pending
+    }
+    expect(pid).toBeDefined()
 
-    expect(await result).toBeUndefined()
-    expect(performance.now() - started).toBeLessThan(1_000)
+    abort.abort()
+    const missed = Symbol("caller abort did not settle")
+    const result = await Promise.race([pending, Promise.resolve(missed)])
+    if (result === missed) {
+      try {
+        process.kill(pid!, "SIGKILL")
+      } catch {}
+      await pending
+    }
+    expect(result).toBeUndefined()
+    for (let attempt = 0; attempt < 20 && alive(pid!); attempt++) await Bun.sleep(250)
+    expect(alive(pid!)).toBeFalse()
   })
 })

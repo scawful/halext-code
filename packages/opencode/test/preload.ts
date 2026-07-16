@@ -10,7 +10,7 @@ import { afterAll } from "bun:test"
 const dir = path.join(os.tmpdir(), "opencode-test-data-" + process.pid)
 await fs.mkdir(dir, { recursive: true })
 afterAll(async () => {
-  const { Database } = await import("../src/storage/db")
+  await Instance.disposeAll()
   Database.close()
   const busy = (error: unknown) =>
     typeof error === "object" && error !== null && "code" in error && error.code === "EBUSY"
@@ -81,3 +81,6 @@ Log.init({
   dev: true,
   level: "DEBUG",
 })
+
+const { Instance } = await import("../src/project/instance")
+const { Database } = await import("../src/storage/db")
