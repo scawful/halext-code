@@ -22,9 +22,18 @@ Recommended AFS commands in this mode:
 - `/afs-handoff`
 - `/afs-work-preflight`
 - `/afs-verify`
+- `/afs-missions`
+- `/afs-approvals`
+- `/afs-schema`
+- `/afs-optimize`
 - `/afs-pack`
 
-## 2) Halext Workbench (AFS operator surface)
+## 2) Halext Workbench (AFS operator surface, deprioritized)
+
+Status: on ice. The terminal surfaces (`hcode` sidebar and halext-tui) now
+cover the AFS dashboard role with fewer moving parts — the workbench needs
+both the bridge and an opencode server running to be useful. It still works,
+but new AFS features land in the terminal surfaces first.
 
 Use this when you want a dashboard-like lane for sessions plus AFS context
 state, with file browsing and previews.
@@ -47,10 +56,31 @@ state, with file browsing and previews.
   - mount quick-jump chips (`scratchpad`, `items`, `hivemind`, etc)
   - file preview
 
-## 3) Halext Bridge (AFS read-model API)
+## 3) Halext TUI (terminal cockpit)
 
-Run this when using workbench or any other local UI that needs stable AFS
-read endpoints.
+Use this when you want the workbench-style operator view without leaving the
+terminal: sessions, timeline, and a live AFS lane side by side.
+
+- Command: `bun run halext-tui` (boots the opencode server and bridge if
+  needed, then launches the cockpit)
+- Package: `packages/halext-tui`
+- Layout: Sessions rail | Timeline | AFS lane (shown when the terminal is at
+  least 128 columns wide)
+- AFS lane shows: index status, phase, MCP servers, open tasks, latest
+  handoff, active missions, pending approvals, and an optional pack preview
+- Keys: `j/k` select session, `i` compose, `n` new session, `r` refresh,
+  `p` pack preview, `h` AFS health check, `q` quit
+- Palette: derived from `.opencode/themes/hcode-ghostty.json` at build time;
+  focused tests keep its key colors aligned with the separate Ghostty profile
+
+The approvals section is display-only. Resolving an approval stays a
+deliberate CLI step (`afs approvals approve|reject`) on explicit user
+direction, never a cockpit shortcut.
+
+## 4) Halext Bridge (AFS read-model API)
+
+Run this when using workbench, halext-tui, or any other local UI that needs
+stable AFS read endpoints.
 
 - Command: `bun run dev:bridge`
 - Package: `packages/halext-bridge`
@@ -58,15 +88,19 @@ read endpoints.
 
 ### Current bridge endpoints
 
-- `GET /health`
+- `GET /health` (bridge process health)
 - `GET /api/summary` (AFS bootstrap summary)
 - `GET /api/session/pack` (session-pack preview)
+- `GET /api/missions` (durable missions; `status`/`limit`/`path` filters)
+- `GET /api/approvals` (approval requests; optional `status` filter)
+- `GET /api/health` (AFS system health check via `afs health status`)
 - `GET /api/fs/list` (root-scoped file tree)
 - `GET /api/fs/read` (root-scoped file preview)
 
-Bridge endpoints are read-only by design for now.
+Bridge endpoints are read-only by design. Mutating flows (approving
+requests, updating missions) intentionally stay in the AFS CLI.
 
-## 4) Theme + terminal profile entrypoint
+## 5) Theme + terminal profile entrypoint
 
 Use this when you want the hcode look-and-feel across both TUI and terminal.
 
@@ -83,5 +117,6 @@ to your Ghostty config and restart Ghostty.
 ## Which one to pick?
 
 - **Coding + tool calls**: `hcode`
-- **AFS dashboard + explorer**: workbench + bridge
+- **AFS dashboard in the terminal**: halext-tui
+- **AFS dashboard + explorer (browser, deprioritized)**: workbench + bridge
 - **Visual polish**: custom TUI theme + Ghostty override

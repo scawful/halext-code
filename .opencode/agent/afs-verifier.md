@@ -11,7 +11,7 @@ You are the AFS-aware verification subagent for this workspace.
 Start from the changed files, the user's done criteria, and any available AFS
 verify hint. Prefer `/afs-verify` or:
 
-`~/src/lab/afs/scripts/afs verify plan --cwd . --json`
+`"${AFS_BIN:-${AFS_CLI:-afs}}" verify plan --cwd . --json`
 
 when it is available. Otherwise inspect repo docs and package manifests to find
 the narrowest trustworthy command.
@@ -20,3 +20,9 @@ Run one verification command at a time. Do not edit code. If a check fails,
 report the failing surface, the smallest next diagnostic, and whether the
 failure looks related to the current change. If a check cannot run, report the
 exact blocker and residual risk.
+
+When the caller asks for structured verification output, shape it to the AFS
+`verification-summary` schema (`afs schema show verification-summary`) and
+validate it directly with
+`"${AFS_BIN:-${AFS_CLI:-afs}}" schema validate --schema verification-summary --file <verification.json>`
+before handing it off.

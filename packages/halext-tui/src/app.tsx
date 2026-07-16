@@ -1,7 +1,9 @@
 import {
   createHalextBridgeClient,
+  type AfsApproval,
   type AfsBootstrapSummary,
   type AfsContextPack,
+  type AfsMission,
   type AfsTask,
 } from "@halext/bridge"
 import {
@@ -15,7 +17,19 @@ import {
 } from "@opencode-ai/sdk/v2/client"
 import { RGBA, TextAttributes, type TextareaRenderable } from "@opentui/core"
 import { useKeyboard, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
-import { For, Show, createEffect, createMemo, createSignal, onMount, type ParentProps } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type ParentProps } from "solid-js"
+import hcodeGhostty from "../../../.opencode/themes/hcode-ghostty.json"
+import {
+  availability,
+  beginRefresh,
+  firstError,
+  ownsRefresh,
+  prioritize,
+  refreshError,
+  type Attention,
+  type AttentionRefresh,
+} from "./attention"
+import { color } from "./theme"
 
 type HalextTuiAppProps = {
   serverUrl: string
@@ -59,16 +73,16 @@ type PartBlock = {
 }
 
 const palette = {
-  background: RGBA.fromHex("#0f1115"),
-  panel: RGBA.fromHex("#151922"),
-  panelAlt: RGBA.fromHex("#10141b"),
-  border: RGBA.fromHex("#2d3440"),
-  accent: RGBA.fromHex("#d89a59"),
-  text: RGBA.fromHex("#f1efe8"),
-  muted: RGBA.fromHex("#93a0ac"),
-  success: RGBA.fromHex("#7ec699"),
-  warning: RGBA.fromHex("#e4b363"),
-  error: RGBA.fromHex("#e07a7a"),
+  background: color(hcodeGhostty, "background"),
+  panel: color(hcodeGhostty, "backgroundPanel"),
+  panelAlt: color(hcodeGhostty, "backgroundElement"),
+  border: color(hcodeGhostty, "border"),
+  accent: color(hcodeGhostty, "primary"),
+  text: color(hcodeGhostty, "text"),
+  muted: color(hcodeGhostty, "textMuted"),
+  success: color(hcodeGhostty, "success"),
+  warning: color(hcodeGhostty, "warning"),
+  error: color(hcodeGhostty, "error"),
 } as const
 
 function formatDate(timestamp?: number | string) {
@@ -412,7 +426,18 @@ function Panel(props: ParentProps<{ title: string; subtitle?: string; width?: nu
 export function HalextTuiApp(props: HalextTuiAppProps) {
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
+  const abort = new AbortController()
   let composerInput: TextareaRenderable | undefined
+  let workspaceGeneration = 0
+  let attentionRefresh: AttentionRefresh = { generation: 0, path: "" }
+  let attentionAbort: AbortController | undefined
+  let packRefresh: AttentionRefresh = { generation: 0, path: "" }
+  let packAbort: AbortController | undefined
+  let healthGeneration = 0
+  let healthAbort: AbortController | undefined
+  let seen = [false, false, false]
+  let attentionError = ""
+  let healthError = ""
 
   const [projects, setProjects] = createSignal<Project[]>([])
   const [sessions, setSessions] = createSignal<GlobalSession[]>([])
@@ -422,6 +447,9 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
   const [mcpEntries, setMcpEntries] = createSignal<McpEntry[]>([])
   const [afsSummary, setAfsSummary] = createSignal<AfsBootstrapSummary | null>(null)
   const [afsPack, setAfsPack] = createSignal<AfsContextPack | null>(null)
+  const [afsMissions, setAfsMissions] = createSignal<AfsMission[]>([])
+  const [afsApprovals, setAfsApprovals] = createSignal<AfsApproval[]>([])
+  const [afsAttention, setAfsAttention] = createSignal<Attention>("ready")
   const [draftPrompt, setDraftPrompt] = createSignal("")
   const [statusText, setStatusText] = createSignal("Starting halext-tui...")
   const [errorText, setErrorText] = createSignal("")
@@ -437,7 +465,6 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       directory: props.directory,
     }),
   )
-  const bridgeClient = createMemo(() => createHalextBridgeClient({ baseUrl: props.bridgeUrl }))
   const selectedSession = createMemo(() => sessions().find((session) => session.id === selectedSessionID()))
   const selectedSessionIndex = createMemo(() => sessions().findIndex((session) => session.id === selectedSessionID()))
   const activePath = createMemo(() => props.directory || selectedSession()?.directory || projects()[0]?.worktree || "")
@@ -465,13 +492,84 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
     queueMicrotask(() => process.exit(0))
   }
 
+  function invalidatePack(path: string) {
+    packRefresh = beginRefresh(packRefresh, path).ticket
+    packAbort?.abort()
+    packAbort = undefined
+    setAfsPack(null)
+    setLoadingPack(false)
+  }
+
+  async function refreshAfsAttention(path: string) {
+    const started = beginRefresh(attentionRefresh, path)
+    attentionRefresh = started.ticket
+    attentionAbort?.abort()
+    const next = new AbortController()
+    attentionAbort = next
+
+    if (started.reset) {
+      seen = [false, false, false]
+      setAfsSummary(null)
+      invalidatePack(path)
+      setAfsMissions([])
+      setAfsApprovals([])
+      setAfsAttention(path ? "unavailable" : "ready")
+    }
+    if (!path) {
+      const state = refreshError(attentionError, errorText(), "", healthError)
+      attentionError = state.owned
+      if (state.visible !== errorText()) setErrorText(state.visible)
+      if (attentionAbort === next) attentionAbort = undefined
+      return
+    }
+
+    const scopedBridge = createHalextBridgeClient({
+      baseUrl: props.bridgeUrl,
+      signal: AbortSignal.any([abort.signal, next.signal]),
+    })
+    try {
+      const [summaryResult, activeMissionResult, blockedMissionResult, approvalResult] = await Promise.allSettled([
+        scopedBridge.getSummary({ path, taskLimit: 8, messageLimit: 3 }),
+        scopedBridge.getMissions({ path, status: "active", limit: 5 }),
+        scopedBridge.getMissions({ path, status: "blocked", limit: 5 }),
+        scopedBridge.getApprovals({ status: "pending" }),
+      ])
+      if (!ownsRefresh(attentionRefresh, started.ticket, activePath())) return
+
+      const missionReady = activeMissionResult.status === "fulfilled" && blockedMissionResult.status === "fulfilled"
+      const failed = [summaryResult.status === "rejected", !missionReady, approvalResult.status === "rejected"]
+      setAfsAttention(availability(failed, seen))
+      seen = seen.map((value, index) => value || !failed[index])
+      const state = refreshError(
+        attentionError,
+        errorText(),
+        summaryResult.status === "rejected" ? explainError(summaryResult.reason) : "",
+        healthError,
+      )
+      attentionError = state.owned
+      if (state.visible !== errorText()) setErrorText(state.visible)
+      if (summaryResult.status === "fulfilled") {
+        setAfsSummary(summaryResult.value)
+      }
+      if (missionReady) {
+        setAfsMissions(prioritize([...activeMissionResult.value, ...blockedMissionResult.value]))
+      }
+      if (approvalResult.status === "fulfilled") setAfsApprovals(approvalResult.value)
+    } finally {
+      if (attentionAbort === next) attentionAbort = undefined
+    }
+  }
+
   function moveSelection(offset: number) {
     const items = sessions()
     if (items.length === 0) return
     const current = selectedSessionIndex()
     const start = current >= 0 ? current : 0
     const nextIndex = Math.max(0, Math.min(items.length - 1, start + offset))
-    setSelectedSessionID(items[nextIndex]?.id ?? "")
+    const next = items[nextIndex]
+    const changed = next?.id !== selectedSessionID()
+    setSelectedSessionID(next?.id ?? "")
+    if (changed) void refreshAfsAttention(props.directory || next?.directory || projects()[0]?.worktree || "")
     setStatusText(`Selected session ${nextIndex + 1} of ${items.length}.`)
   }
 
@@ -491,6 +589,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
   }
 
   async function refreshWorkspace() {
+    const generation = ++workspaceGeneration
     setLoadingWorkspace(true)
     setErrorText("")
     const directory = props.directory || undefined
@@ -508,8 +607,11 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       client().mcp.status(directory ? { directory } : undefined, { throwOnError: false }),
     ])
 
-    if (projectResult.error || sessionResult.error || mcpResult.error) {
-      setErrorText(explainError(projectResult.error) || explainError(sessionResult.error) || explainError(mcpResult.error))
+    if (generation !== workspaceGeneration) return
+
+    const error = firstError(projectResult.error, sessionResult.error, mcpResult.error)
+    if (error) {
+      setErrorText(explainError(error))
       setLoadingWorkspace(false)
       return
     }
@@ -526,20 +628,8 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
     const fallback = stillSelected ?? nextSessions[0]
     setSelectedSessionID(fallback?.id ?? "")
 
-    try {
-      if (activePath()) {
-        const summary = await bridgeClient().getSummary({
-          path: directory ?? fallback?.directory ?? nextProjects[0]?.worktree,
-          taskLimit: 8,
-          messageLimit: 3,
-        })
-        setAfsSummary(summary)
-      } else {
-        setAfsSummary(null)
-      }
-    } catch (error) {
-      setErrorText(explainError(error))
-    }
+    await refreshAfsAttention(directory ?? fallback?.directory ?? nextProjects[0]?.worktree ?? "")
+    if (generation !== workspaceGeneration) return
 
     setStatusText(
       `Loaded ${nextProjects.length} project${nextProjects.length === 1 ? "" : "s"}, ${nextSessions.length} session${nextSessions.length === 1 ? "" : "s"}, and ${nextMcpEntries.length} MCP server${nextMcpEntries.length === 1 ? "" : "s"}.`,
@@ -611,6 +701,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
     const created = toGlobalSession(result.data)
     setSessions((current) => upsertSessionRecord(current, created))
     setSelectedSessionID(created.id)
+    void refreshAfsAttention(props.directory || created.directory || projects()[0]?.worktree || "")
     setStatusText(`Created session ${created.title}.`)
     return created
   }
@@ -677,26 +768,69 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
   }
 
   async function buildPackPreview() {
-    if (!activePath()) {
+    const path = activePath()
+    if (!path) {
       setErrorText("Pick a directory or session before building a pack preview.")
       return
     }
+    const started = beginRefresh(packRefresh, path)
+    packRefresh = started.ticket
+    packAbort?.abort()
+    const next = new AbortController()
+    packAbort = next
+    const scopedBridge = createHalextBridgeClient({
+      baseUrl: props.bridgeUrl,
+      signal: AbortSignal.any([abort.signal, next.signal]),
+    })
     setLoadingPack(true)
     try {
-      const pack = await bridgeClient().getPack({
-        path: activePath(),
+      const pack = await scopedBridge.getPack({
+        path,
         model: "codex",
         query: "halext tui operator context",
         maxQueryResults: 4,
         maxEmbeddingResults: 0,
         timeoutMs: 60000,
       })
+      if (!ownsRefresh(packRefresh, started.ticket, activePath())) return
       setAfsPack(pack)
       setStatusText(`Built AFS pack preview with ${pack.sections.length} section${pack.sections.length === 1 ? "" : "s"}.`)
     } catch (error) {
-      setErrorText(explainError(error))
+      if (ownsRefresh(packRefresh, started.ticket, activePath())) setErrorText(explainError(error))
     } finally {
-      setLoadingPack(false)
+      if (ownsRefresh(packRefresh, started.ticket, activePath())) setLoadingPack(false)
+      if (packAbort === next) packAbort = undefined
+    }
+  }
+
+  async function checkAfsHealth() {
+    const generation = ++healthGeneration
+    healthAbort?.abort()
+    const next = new AbortController()
+    healthAbort = next
+    const scopedBridge = createHalextBridgeClient({
+      baseUrl: props.bridgeUrl,
+      signal: AbortSignal.any([abort.signal, next.signal]),
+    })
+    setStatusText("Running AFS health check...")
+    try {
+      const health = await scopedBridge.getHealth()
+      if (generation !== healthGeneration) return
+      const worst = health.scores.filter((score) => score.status === "critical").slice(0, 2)
+      const detail = worst.length > 0 ? ` Critical: ${worst.map((score) => score.metric).join(", ")}.` : ""
+      const state = refreshError(healthError, errorText(), "", attentionError)
+      healthError = state.owned
+      if (state.visible !== errorText()) setErrorText(state.visible)
+      setStatusText(`AFS health ${health.overall_status} (${Math.round(health.overall_score * 100)}%).${detail}`)
+    } catch (error) {
+      if (generation !== healthGeneration) return
+      const detail = explainError(error)
+      const state = refreshError(healthError, errorText(), detail, attentionError)
+      healthError = state.owned
+      if (state.visible !== errorText()) setErrorText(state.visible)
+      setStatusText("AFS health check failed")
+    } finally {
+      if (healthAbort === next) healthAbort = undefined
     }
   }
 
@@ -741,6 +875,11 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       void buildPackPreview()
       return
     }
+    if (evt.name === "h") {
+      evt.preventDefault()
+      void checkAfsHealth()
+      return
+    }
     if (evt.name === "i") {
       evt.preventDefault()
       focusComposer()
@@ -774,6 +913,16 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
   onMount(() => {
     void refreshWorkspace()
   })
+  onCleanup(() => {
+    workspaceGeneration += 1
+    healthGeneration += 1
+    attentionRefresh = beginRefresh(attentionRefresh, "").ticket
+    packRefresh = beginRefresh(packRefresh, "").ticket
+    attentionAbort?.abort()
+    packAbort?.abort()
+    healthAbort?.abort()
+    abort.abort()
+  })
 
   return (
     <box flexDirection="column" width="100%" height="100%" backgroundColor={palette.background} paddingTop={1} paddingBottom={1}>
@@ -798,6 +947,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
         <text fg={palette.muted}>n new</text>
         <text fg={palette.muted}>r refresh</text>
         <text fg={palette.muted}>p pack</text>
+        <text fg={palette.muted}>h health</text>
       </box>
 
       <box flexDirection="row" flexGrow={1} minHeight={0} paddingTop={1} gap={1}>
@@ -879,6 +1029,11 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
 
         <Show when={showAfsLane()}>
           <Panel title="AFS lane" subtitle={activePath() ? shortenPath(activePath()) : "No active path"} width={40}>
+            <Show when={afsAttention() !== "ready"}>
+              <text fg={palette.warning}>
+                {afsAttention() === "stale" ? "AFS attention stale; showing last known" : "AFS attention partially unavailable"}
+              </text>
+            </Show>
             <Show when={afsSummary()} fallback={<text fg={palette.muted}>No AFS summary loaded.</text>}>
               <text fg={palette.text}>{summarizeIndex(afsSummary())}</text>
               <text fg={palette.muted}>
@@ -951,6 +1106,38 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
                   </box>
                 )}
               </Show>
+            </Show>
+            <Show when={afsMissions().length > 0}>
+              <box flexDirection="column" paddingTop={1}>
+                <text fg={palette.accent} attributes={TextAttributes.BOLD}>
+                  Missions
+                </text>
+                <For each={afsMissions().slice(0, 3)}>
+                  {(mission) => (
+                    <box flexDirection="column">
+                      <text fg={mission.status === "blocked" ? palette.warning : palette.text}>
+                        {truncate(`${mission.title} (${mission.status})`, 36)}
+                      </text>
+                      <Show when={mission.next_steps[0]}>
+                        <text fg={palette.muted}>{truncate(`next: ${mission.next_steps[0]}`, 36)}</text>
+                      </Show>
+                    </box>
+                  )}
+                </For>
+              </box>
+            </Show>
+            <Show when={afsApprovals().length > 0}>
+              <box flexDirection="column" paddingTop={1}>
+                <text fg={palette.warning} attributes={TextAttributes.BOLD}>
+                  Approvals pending {afsApprovals().length}
+                </text>
+                <For each={afsApprovals().slice(0, 3)}>
+                  {(item) => (
+                    <text fg={palette.text}>{truncate(`${item.agent}: ${item.action}`, 36)}</text>
+                  )}
+                </For>
+                <text fg={palette.muted}>resolve via afs approvals CLI</text>
+              </box>
             </Show>
           </Panel>
         </Show>

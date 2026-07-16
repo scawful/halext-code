@@ -8,11 +8,11 @@ Rules:
 
 - Start with the router:
 
-  `~/src/lab/afs/scripts/afs next --path . --intent context --json`
+  `"${AFS_BIN:-${AFS_CLI:-afs}}" next --path . --intent context --json`
 
 - If `$ARGUMENTS` names a topic, run a focused query:
 
-  `~/src/lab/afs/scripts/afs query "$ARGUMENTS" --path . --limit 8 --json`
+  `"${AFS_BIN:-${AFS_CLI:-afs}}" query "$ARGUMENTS" --path . --limit 8 --json`
 
 - Read exact files only when query results point to them.
 - Do not broaden into memory/task/handoff MCP tools; route those through slash

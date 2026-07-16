@@ -113,8 +113,9 @@ Also included are subagents for delegation, including **general** and
 
 The default AFS MCP catalog stays slim. Use slash commands such as
 `/afs-next`, `/afs-help`, `/afs-query`, `/afs-handoff`,
-`/afs-work-preflight`, `/afs-verify`, and `/afs-pack` for richer AFS
-workflows. `/afs-next` is the default router when an agent is unsure which AFS
+`/afs-work-preflight`, `/afs-verify`, `/afs-missions`, `/afs-approvals`,
+`/afs-schema`, `/afs-optimize`, and `/afs-pack` for richer AFS workflows.
+`/afs-next` is the default router when an agent is unsure which AFS
 surface to use.
 Daily aliases keep common paths short: `/start`, `/find`, `/check`, `/ship`,
 `/reply`, `/handoff`, `/fixafs`, and `/setupafs`.

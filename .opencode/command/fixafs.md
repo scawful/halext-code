@@ -8,11 +8,11 @@ Rules:
 
 - Run the router:
 
-  `~/src/lab/afs/scripts/afs next --path . --intent refresh --json`
+  `"${AFS_BIN:-${AFS_CLI:-afs}}" next --path . --intent refresh --json`
 
 - Prefer dry-run repair first:
 
-  `~/src/lab/afs/scripts/afs context repair --path . --dry-run --json`
+  `"${AFS_BIN:-${AFS_CLI:-afs}}" context repair --path . --dry-run --json`
 
 - Do not rebuild large indexes, remap mounts, mutate client config, or start
   background agents unless the user explicitly approves that action.

@@ -28,6 +28,7 @@ jobs:
           - name: windows
             host: windows-latest
     runs-on: ${{ matrix.settings.host }}
+    timeout-minutes: 20
     defaults:
       run:
         shell: bash
@@ -45,12 +46,26 @@ jobs:
           git config --global user.email "bot@opencode.ai"
           git config --global user.name "opencode"
 
+      - name: Build bridge artifact
+        run: bun run --cwd packages/halext-bridge build
+
+      - name: Smoke bridge artifact
+        run: >-
+          bun --cwd packages/halext-bridge -e
+          'process.env.AFS_BIN = "node";
+          process.env.AFS_CLI = "node";
+          const { runAfsJson } = await import("./dist/server.js");
+          const value = await runAfsJson(["-e", "console.log(JSON.stringify({ ok: true }))"], { timeoutMs: 10_000 });
+          if (value.ok !== true) process.exit(1)'
+
       - name: Run unit tests
         # GitHub-hosted runners are smaller than the fork's former Blacksmith
         # workers. Serializing package tasks prevents unrelated suites from
         # starving Bun's per-test timeout while retaining each package's own
         # test parallelism.
-        run: bun turbo test --concurrency=1
+        # Stream task output so a stalled package remains diagnosable instead
+        # of withholding its logs until the task exits.
+        run: bun turbo test --concurrency=1 --log-order=stream
 
   e2e:
     name: e2e (${{ matrix.settings.name }})

@@ -4,9 +4,28 @@
   "globalPassThroughEnv": ["CI", "OPENCODE_DISABLE_SHARE"],
   "tasks": {
     "typecheck": {},
+    "@halext/tui#typecheck": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.opencode/themes/hcode-ghostty.json"]
+    },
     "build": {
       "dependsOn": [],
       "outputs": ["dist/**"]
+    },
+    "@halext/tui#build": {
+      "dependsOn": [],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.opencode/themes/hcode-ghostty.json"],
+      "outputs": ["dist/**"]
+    },
+    "@halext/bridge#test": {
+      "outputs": []
+    },
+    "@halext/tui#test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.opencode/themes/hcode-ghostty.json",
+        "$TURBO_ROOT$/ghostty/hcode-ghostty.conf"
+      ],
+      "outputs": []
     },
     "opencode#test": {
       "dependsOn": ["^build"],

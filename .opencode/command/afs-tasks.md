@@ -7,7 +7,7 @@ workspace.
 
 Rules:
 
-- Prefer `~/src/lab/afs/scripts/afs tasks list --path . --json` because
+- Prefer `"${AFS_BIN:-${AFS_CLI:-afs}}" tasks list --path . --json` because
   `task.*` is not part of the default slim MCP catalog.
 - Use MCP task tools only in an explicit full-catalog/debug session.
 - Keep the answer focused on actionable tasks, blockers, and next steps.

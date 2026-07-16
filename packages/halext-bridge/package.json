@@ -9,9 +9,10 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test src/*.test.ts",
     "dev": "bun --watch src/server.ts",
     "start": "bun src/server.ts",
-    "build": "bun build ./src/server.ts --outfile ./dist/server.js --target bun"
+    "build": "rm -rf ./dist && bun build ./src/server.ts --outdir ./dist --target bun"
   },
   "license": "MIT",
   "devDependencies": {
@@ -20,6 +21,7 @@
     "typescript": "catalog:"
   },
   "dependencies": {
+    "@vscode/windows-process-tree": "catalog:",
     "hono": "catalog:",
     "zod": "catalog:"
   }

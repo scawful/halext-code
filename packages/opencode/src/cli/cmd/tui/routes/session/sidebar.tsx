@@ -12,6 +12,7 @@ import { useDirectory } from "../../context/directory"
 import { useKV } from "../../context/kv"
 import { TodoItem } from "../../component/todo-item"
 import { App } from "@/cli/name"
+import { SidebarAfs } from "./sidebar-afs"
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const sync = useSync()
@@ -231,6 +232,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                 </Show>
               </box>
             </Show>
+            <SidebarAfs />
             <Show when={diff().length > 0}>
               <box>
                 <box

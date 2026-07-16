@@ -30,6 +30,12 @@ Keep it short and pragmatic. Include:
 - `/afs-work-preflight [purpose]` for style evidence and approval guardrails
   before work-facing writing
 - `/afs-verify [change]` for the fastest relevant verification pass
+- `/afs-missions` for durable cross-session missions (list, inspect, update)
+- `/afs-approvals` for pending approval requests (resolve only on explicit
+  user instruction)
+- `/afs-schema` for structured-response schemas (list, show, validate)
+- `/afs-optimize` for the deterministic optimization decision gate on
+  evidence files
 - `/afs-refresh` for explicit index or context refresh work when freshness
   matters
 - `/afs-pack` for an explicit heavy handoff/export pack
@@ -51,6 +57,10 @@ Rules:
   low-friction paths.
 - Make it clear that `/afs-handoff-create` is an intentional write step, but
   still lighter than `/afs-pack`.
+- Make it clear that `/afs-missions` is for goals that outlive a session,
+  `/afs-approvals` never resolves requests without explicit user direction,
+  and `/afs-optimize` produces recommendations for human review, never
+  activation.
 - Make it clear that `/afs-work-preflight` is mandatory before external work
   writing, and that posting/sending still requires explicit approval.
 - Make it clear that `/afs-refresh`, `/afs-pack`, and `/afs-update-work` are

@@ -134,4 +134,4 @@ ensure_server
 ensure_bridge
 
 cd "$ROOT"
-exec bun --cwd packages/halext-tui src/index.tsx --server "$server_url" --bridge "$bridge_url" "${passthrough_args[@]}"
+bun --cwd packages/halext-tui src/index.tsx --server "$server_url" --bridge "$bridge_url" "${passthrough_args[@]}"
