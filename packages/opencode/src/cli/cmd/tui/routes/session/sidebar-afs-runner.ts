@@ -12,6 +12,8 @@ type Options = {
   limit: number
 }
 
+type DescendantCleanup = "clean" | "descendants" | "error"
+
 function command(cmd: string[]): [string, ...string[]] {
   const file = cmd[0]
   if (!file) throw new Error("Command is required")
@@ -43,24 +45,12 @@ exit $LASTEXITCODE
   ]
 }
 
-function windows(proc: ChildProcess, pid: number) {
-  try {
-    const child = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
-      stdio: "ignore",
-      windowsHide: true,
-    })
-    child.once("error", () => {})
-    child.unref()
-  } catch {}
-
-  // A parent can exit while a descendant keeps an inherited pipe open. In
-  // that case taskkill cannot root the tree at the dead PID, so discover the
-  // surviving descendants from their recorded ParentProcessId values.
-  try {
-    const script = `
-$ErrorActionPreference = 'SilentlyContinue'
+function cleanupWindowsDescendants(pid: number): Promise<DescendantCleanup> {
+  const script = `
+$ErrorActionPreference = 'Stop'
 $rootPid = [uint32]${pid}
-$all = @(Get-CimInstance Win32_Process)
+$all = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId)
+$ErrorActionPreference = 'SilentlyContinue'
 $pending = @($rootPid)
 $targets = @()
 while ($pending.Count -gt 0) {
@@ -72,18 +62,58 @@ while ($pending.Count -gt 0) {
   $targets += $next
   $pending = $next
 }
+if ($targets.Count -eq 0) { exit 0 }
 foreach ($targetPid in $targets) {
   & taskkill.exe /PID $targetPid /T /F *> $null
 }
+exit 42
 `
-    const child = spawn(
-      "powershell.exe",
-      ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-      { stdio: "ignore", windowsHide: true },
-    )
+
+  return new Promise((resolve) => {
+    let cleaner: ChildProcess
+    try {
+      cleaner = spawn(
+        "powershell.exe",
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+        { stdio: "ignore", windowsHide: true },
+      )
+    } catch {
+      resolve("error")
+      return
+    }
+
+    let settled = false
+    const finish = (result: DescendantCleanup) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(result)
+    }
+    const timer = setTimeout(() => {
+      cleaner.kill("SIGKILL")
+      finish("error")
+    }, 3_000)
+    timer.unref()
+    cleaner.once("error", () => finish("error"))
+    cleaner.once("close", (code) => finish(code === 0 ? "clean" : code === 42 ? "descendants" : "error"))
+  })
+}
+
+function windows(proc: ChildProcess, pid: number, cleanupDescendants: () => Promise<DescendantCleanup>) {
+  try {
+    const child = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    })
     child.once("error", () => {})
     child.unref()
   } catch {}
+
+  // A parent can exit while a descendant keeps an inherited pipe open. In
+  // that case taskkill cannot root the tree at the dead PID, so discover the
+  // surviving descendants from their recorded ParentProcessId values. This
+  // remains best-effort if an intermediate process exits before the snapshot.
+  void cleanupDescendants()
 
   const timer = setTimeout(() => {
     try {
@@ -93,20 +123,35 @@ foreach ($targetPid in $targets) {
   timer.unref()
 }
 
-function terminate(proc: ChildProcess) {
+function terminate(proc: ChildProcess, cleanupWindows?: () => Promise<DescendantCleanup>) {
   const pid = proc.pid
   if (!pid) {
     proc.kill("SIGKILL")
     return
   }
   if (process.platform === "win32") {
-    windows(proc, pid)
+    windows(proc, pid, cleanupWindows ?? (() => cleanupWindowsDescendants(pid)))
     return
   }
   try {
     process.kill(-pid, "SIGKILL")
   } catch {
     proc.kill("SIGKILL")
+  }
+}
+
+function cleanupUnixProcessGroup(pid: number): DescendantCleanup {
+  try {
+    process.kill(-pid, 0)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") return "clean"
+    return "error"
+  }
+  try {
+    process.kill(-pid, "SIGKILL")
+    return "descendants"
+  } catch {
+    return "error"
   }
 }
 
@@ -137,6 +182,8 @@ export function run(cmd: string[], options: Options): Promise<Result | undefined
     const stderr: Buffer[] = []
     let size = 0
     let settled = false
+    let windowsCleanup: Promise<DescendantCleanup> | undefined
+    const cleanupWindows = () => (windowsCleanup ??= cleanupWindowsDescendants(proc.pid!))
 
     const finish = (value?: Result) => {
       if (settled) return
@@ -147,7 +194,7 @@ export function run(cmd: string[], options: Options): Promise<Result | undefined
     }
     const stop = () => {
       if (settled) return
-      terminate(proc)
+      terminate(proc, cleanupWindows)
       proc.stdout?.destroy()
       proc.stderr?.destroy()
       proc.unref()
@@ -169,11 +216,21 @@ export function run(cmd: string[], options: Options): Promise<Result | undefined
     proc.stderr.once("error", stop)
     proc.once("error", stop)
     proc.once("close", (code) => {
-      finish({
+      if (settled) return
+      const result = {
         code: code ?? 1,
         stdout: Buffer.concat(stdout),
         stderr: Buffer.concat(stderr),
-      })
+      }
+      if (!proc.pid) {
+        finish()
+        return
+      }
+      if (process.platform !== "win32") {
+        finish(cleanupUnixProcessGroup(proc.pid) === "clean" ? result : undefined)
+        return
+      }
+      void cleanupWindows().then((cleanup) => finish(cleanup === "clean" ? result : undefined))
     })
     options.signal.addEventListener("abort", stop, { once: true })
     if (options.signal.aborted) stop()

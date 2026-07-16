@@ -77,18 +77,70 @@ describe("sidebar AFS runner", () => {
       ],
       {
         signal: new AbortController().signal,
-        timeout: 200,
+        timeout: 2_000,
         limit: 1_024,
       },
     )
 
     expect(result).toBeUndefined()
-    expect(performance.now() - started).toBeLessThan(2_000)
+    expect(performance.now() - started).toBeLessThan(4_000)
     const pid = Number(await Bun.file(marker).text())
     expect(pid).toBeGreaterThan(0)
     for (let attempt = 0; attempt < 20 && alive(pid); attempt++) await Bun.sleep(250)
     expect(alive(pid)).toBeFalse()
   })
+
+  test.skipIf(process.platform === "win32")("rejects a successful parent with ignored-stdio descendants", async () => {
+    await using tmp = await tmpdir()
+    const marker = join(tmp.path, "descendant.pid")
+    const result = await run(
+      [
+        process.execPath,
+        "-e",
+        `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
+      ],
+      {
+        signal: new AbortController().signal,
+        timeout: 2_000,
+        limit: 1_024,
+      },
+    )
+
+    const pid = Number(await Bun.file(marker).text())
+    expect(pid).toBeGreaterThan(0)
+    for (let attempt = 0; attempt < 20 && alive(pid); attempt++) await Bun.sleep(50)
+    expect(alive(pid)).toBeFalse()
+    expect(result).toBeUndefined()
+  })
+
+  test.skipIf(process.platform !== "win32")(
+    "drains ignored-stdio descendants after their direct parent exits",
+    async () => {
+      await using tmp = await tmpdir()
+      const marker = join(tmp.path, "descendant.pid")
+      const started = performance.now()
+      const result = await run(
+        [
+          process.execPath,
+          "-e",
+          `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
+        ],
+        {
+          signal: new AbortController().signal,
+          timeout: 500,
+          limit: 1_024,
+        },
+      )
+      const elapsed = performance.now() - started
+
+      const pid = Number(await Bun.file(marker).text())
+      expect(pid).toBeGreaterThan(0)
+      for (let attempt = 0; attempt < 20 && alive(pid); attempt++) await Bun.sleep(250)
+      expect(alive(pid)).toBeFalse()
+      expect(result).toBeUndefined()
+      expect(elapsed).toBeLessThan(2_000)
+    },
+  )
 
   test("honors a caller abort before the wall-clock timeout", async () => {
     const abort = new AbortController()
