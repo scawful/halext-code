@@ -28,6 +28,7 @@ jobs:
           - name: windows
             host: windows-latest
     runs-on: ${{ matrix.settings.host }}
+    timeout-minutes: 20
     defaults:
       run:
         shell: bash
@@ -50,7 +51,9 @@ jobs:
         # workers. Serializing package tasks prevents unrelated suites from
         # starving Bun's per-test timeout while retaining each package's own
         # test parallelism.
-        run: bun turbo test --concurrency=1
+        # Stream task output so a stalled package remains diagnosable instead
+        # of withholding its logs until the task exits.
+        run: bun turbo test --concurrency=1 --log-order=stream
 
   e2e:
     name: e2e (${{ matrix.settings.name }})
