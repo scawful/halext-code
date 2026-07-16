@@ -46,7 +46,11 @@ jobs:
           git config --global user.name "opencode"
 
       - name: Run unit tests
-        run: bun turbo test
+        # GitHub-hosted runners are smaller than the fork's former Blacksmith
+        # workers. Serializing package tasks prevents unrelated suites from
+        # starving Bun's per-test timeout while retaining each package's own
+        # test parallelism.
+        run: bun turbo test --concurrency=1
 
   e2e:
     name: e2e (${{ matrix.settings.name }})
