@@ -178,6 +178,55 @@ test("timeouts terminate descendants after the direct parent exits", async () =>
   expect(alive(pid)).toBeFalse()
 })
 
+signalTest("successful parents cannot leave ignored-stdio descendants", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "halext-bridge-orphan-test-"))
+  paths.push(directory)
+  const pidPath = join(directory, "descendant.pid")
+  process.env.AFS_BIN = process.execPath
+  process.env.AFS_CLI = process.execPath
+
+  await expect(
+    runAfsJson(
+      [
+        "-e",
+        `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }); await Bun.write(${JSON.stringify(pidPath)}, String(child.pid)); console.log("{}"); process.exit(0)`,
+      ],
+      { timeoutMs: 2_000 },
+    ),
+  ).rejects.toThrow("descendant")
+
+  const pid = Number(await readFile(pidPath, "utf8"))
+  expect(pid).toBeGreaterThan(0)
+  for (let attempt = 0; attempt < 20 && alive(pid); attempt++) await Bun.sleep(50)
+  expect(alive(pid)).toBeFalse()
+})
+
+test.skipIf(process.platform !== "win32")(
+  "Windows parent close drains ignored-stdio descendants before success",
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), "halext-bridge-windows-orphan-test-"))
+    paths.push(directory)
+    const pidPath = join(directory, "descendant.pid")
+    process.env.AFS_BIN = process.execPath
+    process.env.AFS_CLI = process.execPath
+
+    await expect(
+      runAfsJson(
+        [
+          "-e",
+          `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }); await Bun.write(${JSON.stringify(pidPath)}, String(child.pid)); console.log("{}"); process.exit(0)`,
+        ],
+        { timeoutMs: 10_000 },
+      ),
+    ).rejects.toThrow("descendant")
+
+    const pid = Number(await readFile(pidPath, "utf8"))
+    expect(pid).toBeGreaterThan(0)
+    for (let attempt = 0; attempt < 20 && alive(pid); attempt++) await Bun.sleep(250)
+    expect(alive(pid)).toBeFalse()
+  },
+)
+
 test("client abort terminates the server-side AFS process tree", async () => {
   const directory = await fakeCli(`
 const child = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 1000)"], { stdout: "inherit", stderr: "inherit" })

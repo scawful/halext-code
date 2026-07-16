@@ -13,6 +13,10 @@ const DEFAULT_PORT = Number(process.env.HALEXT_BRIDGE_PORT ?? "4319")
 export const DEFAULT_BRIDGE_HOST = "127.0.0.1"
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 const children = new Set<ChildProcess>()
+const cleanupTasks = new Set<Promise<unknown>>()
+const windowsCleanups = new WeakMap<ChildProcess, Promise<DescendantCleanup>>()
+
+type DescendantCleanup = "clean" | "descendants" | "error"
 
 const SummaryQuerySchema = z.object({
   path: z.string().optional(),
@@ -207,7 +211,73 @@ exit $LASTEXITCODE
   ]
 }
 
-function windows(proc: ChildProcess, pid: number) {
+function trackedCleanup<T>(task: Promise<T>) {
+  cleanupTasks.add(task)
+  void task.finally(() => cleanupTasks.delete(task))
+  return task
+}
+
+function cleanupWindowsDescendants(proc: ChildProcess, pid: number): Promise<DescendantCleanup> {
+  const existing = windowsCleanups.get(proc)
+  if (existing) return existing
+
+  const script = `
+$ErrorActionPreference = 'Stop'
+$rootPid = [uint32]${pid}
+$all = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId)
+$ErrorActionPreference = 'SilentlyContinue'
+$pending = @($rootPid)
+$targets = @()
+while ($pending.Count -gt 0) {
+  $next = @()
+  foreach ($parentPid in $pending) {
+    $next += @($all | Where-Object { [uint32]$_.ParentProcessId -eq [uint32]$parentPid } | ForEach-Object { [uint32]$_.ProcessId })
+  }
+  $next = @($next | Where-Object { $targets -notcontains $_ } | Sort-Object -Unique)
+  $targets += $next
+  $pending = $next
+}
+if ($targets.Count -eq 0) { exit 0 }
+foreach ($targetPid in $targets) {
+  & taskkill.exe /PID $targetPid /T /F *> $null
+}
+exit 42
+`
+
+  const task = new Promise<DescendantCleanup>((resolve) => {
+    let cleaner: ChildProcess
+    try {
+      cleaner = spawn(
+        "powershell.exe",
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+        { stdio: "ignore", windowsHide: true },
+      )
+    } catch {
+      resolve("error")
+      return
+    }
+
+    let settled = false
+    const finish = (result: DescendantCleanup) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(result)
+    }
+    const timer = setTimeout(() => {
+      cleaner.kill("SIGKILL")
+      finish("error")
+    }, 3_000)
+    timer.unref()
+    cleaner.once("error", () => finish("error"))
+    cleaner.once("close", (code) => finish(code === 0 ? "clean" : code === 42 ? "descendants" : "error"))
+  })
+  const tracked = trackedCleanup(task)
+  windowsCleanups.set(proc, tracked)
+  return tracked
+}
+
+function terminateWindows(proc: ChildProcess, pid: number) {
   try {
     const child = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
       stdio: "ignore",
@@ -222,57 +292,47 @@ function windows(proc: ChildProcess, pid: number) {
   // surviving descendants from their recorded ParentProcessId values. This
   // remains best-effort: a static snapshot cannot recover a deeper chain when
   // an intermediate parent already exited.
-  try {
-    const script = `
-$ErrorActionPreference = 'SilentlyContinue'
-$rootPid = [uint32]${pid}
-$all = @(Get-CimInstance Win32_Process)
-$pending = @($rootPid)
-$targets = @()
-while ($pending.Count -gt 0) {
-  $next = @()
-  foreach ($parentPid in $pending) {
-    $next += @($all | Where-Object { [uint32]$_.ParentProcessId -eq [uint32]$parentPid } | ForEach-Object { [uint32]$_.ProcessId })
-  }
-  $next = @($next | Where-Object { $targets -notcontains $_ } | Sort-Object -Unique)
-  $targets += $next
-  $pending = $next
-}
-foreach ($targetPid in $targets) {
-  & taskkill.exe /PID $targetPid /T /F *> $null
-}
-`
-    const child = spawn(
-      "powershell.exe",
-      ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-      { stdio: "ignore", windowsHide: true },
-    )
-    child.once("error", () => {})
-    child.unref()
-  } catch {}
-
+  const cleanup = cleanupWindowsDescendants(proc, pid)
   const timer = setTimeout(() => {
     try {
       proc.kill("SIGKILL")
     } catch {}
   }, 1_000)
   timer.unref()
+  return cleanup
+}
+
+function cleanupUnixProcessGroup(pid: number): DescendantCleanup {
+  try {
+    process.kill(-pid, 0)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") return "clean"
+    return "error"
+  }
+
+  try {
+    process.kill(-pid, "SIGKILL")
+    return "descendants"
+  } catch {
+    return "error"
+  }
 }
 
 export function terminate(proc: ChildProcess) {
   const pid = proc.pid
   if (!pid) {
     proc.kill("SIGKILL")
-    return
+    return Promise.resolve<DescendantCleanup>("error")
   }
   if (process.platform === "win32") {
-    windows(proc, pid)
-    return
+    return terminateWindows(proc, pid)
   }
   try {
     process.kill(-pid, "SIGKILL")
+    return Promise.resolve<DescendantCleanup>("descendants")
   } catch {
     proc.kill("SIGKILL")
+    return Promise.resolve<DescendantCleanup>("error")
   }
 }
 
@@ -282,7 +342,6 @@ function track(proc: ChildProcess) {
 }
 
 function closed(proc: ChildProcess, timeoutMs: number) {
-  if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve()
   return new Promise<void>((resolve) => {
     const done = () => {
       clearTimeout(timer)
@@ -292,13 +351,15 @@ function closed(proc: ChildProcess, timeoutMs: number) {
     const timer = setTimeout(done, timeoutMs)
     timer.unref()
     proc.once("close", done)
+    if (!children.has(proc)) done()
   })
 }
 
 export async function shutdownAfsProcesses(timeoutMs = 2_000) {
   const active = [...children]
-  active.forEach(terminate)
-  await Promise.all(active.map((proc) => closed(proc, timeoutMs)))
+  const closing = active.map((proc) => closed(proc, timeoutMs))
+  const cleanup = active.map(terminate)
+  await Promise.allSettled([...closing, ...cleanup, ...cleanupTasks])
 }
 
 export async function runAfsJson<T>(
@@ -372,18 +433,36 @@ export async function runAfsJson<T>(
     proc.once("error", (error) => stop(new BridgeError(`Failed to start AFS command: ${error.message}`, 502)))
     proc.once("close", (code) => {
       if (settled) return
-      const out = Buffer.concat(stdout).toString()
-      const err = Buffer.concat(stderr).toString()
-      if (code !== 0) {
-        finish(() => reject(new BridgeError(err.trim() || out.trim() || "AFS command failed", 502, err || out)))
-        return
+      const complete = async () => {
+        const pid = proc.pid
+        const cleanup = !pid
+          ? "error"
+          : process.platform === "win32"
+            ? await cleanupWindowsDescendants(proc, pid)
+            : cleanupUnixProcessGroup(pid)
+        if (cleanup !== "clean") {
+          const message =
+            cleanup === "descendants"
+              ? "AFS command left descendant processes"
+              : "AFS command process-tree cleanup failed"
+          finish(() => reject(new BridgeError(message, 502)))
+          return
+        }
+
+        const out = Buffer.concat(stdout).toString()
+        const err = Buffer.concat(stderr).toString()
+        if (code !== 0) {
+          finish(() => reject(new BridgeError(err.trim() || out.trim() || "AFS command failed", 502, err || out)))
+          return
+        }
+        try {
+          const value = JSON.parse(out) as T
+          finish(() => resolve(value))
+        } catch {
+          finish(() => reject(new BridgeError("AFS returned non-JSON output", 502, out || err)))
+        }
       }
-      try {
-        const value = JSON.parse(out) as T
-        finish(() => resolve(value))
-      } catch {
-        finish(() => reject(new BridgeError("AFS returned non-JSON output", 502, out || err)))
-      }
+      void complete()
     })
     options?.signal?.addEventListener("abort", cancel, { once: true })
     if (options?.signal?.aborted) cancel()
