@@ -3,19 +3,14 @@ import { spawn } from "node:child_process"
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import {
-  BridgeApp,
-  DEFAULT_BRIDGE_HOST,
-  approvalArgs,
-  runAfsJson,
-  shutdownAfsProcesses,
-  terminate,
-} from "./server"
+import { BridgeApp, DEFAULT_BRIDGE_HOST, approvalArgs, runAfsJson, shutdownAfsProcesses, terminate } from "./server"
 
 const originalCli = process.env.AFS_CLI
 const originalBin = process.env.AFS_BIN
 const paths: string[] = []
 const signalTest = process.platform === "win32" ? test.skip : test
+const processTestTimeout = { timeout: process.platform === "win32" ? 20_000 : 5_000 }
+const validationTestTimeout = { timeout: process.platform === "win32" ? 60_000 : 5_000 }
 
 function alive(pid: number) {
   try {
@@ -43,6 +38,15 @@ async function fakeCli(source: string) {
   return directory
 }
 
+async function waitForPid(path: string) {
+  const deadline = Date.now() + (process.platform === "win32" ? 5_000 : 1_000)
+  do {
+    const pid = Number(await readFile(path, "utf8").catch(() => "")) || undefined
+    if (pid !== undefined) return pid
+    await Bun.sleep(25)
+  } while (Date.now() < deadline)
+}
+
 afterEach(async () => {
   await shutdownAfsProcesses()
   if (originalBin === undefined) delete process.env.AFS_BIN
@@ -61,8 +65,10 @@ describe("approval routing", () => {
     expect(approvalArgs()).toEqual(["approvals", "history", "--json"])
   })
 
-  test("returns approved records instead of a false-empty response", async () => {
-    await fakeCli(`
+  test(
+    "returns approved records instead of a false-empty response",
+    async () => {
+      await fakeCli(`
 const command = Bun.argv.slice(2)
 if (command.join(" ") !== "approvals history --json") process.exit(2)
 console.log(JSON.stringify([
@@ -71,38 +77,44 @@ console.log(JSON.stringify([
 ]))
 `)
 
-    const response = await BridgeApp.request("http://localhost/api/approvals?status=approved")
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual([
-      {
-        agent: "reviewer",
-        action: "publish",
-        detail: "approved",
-        timestamp: "now",
-        status: "approved",
-        reviewed_by: "human",
-        reviewed_at: "now",
-      },
-    ])
-  })
+      const response = await BridgeApp.request("http://localhost/api/approvals?status=approved")
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual([
+        {
+          agent: "reviewer",
+          action: "publish",
+          detail: "approved",
+          timestamp: "now",
+          status: "approved",
+          reviewed_by: "human",
+          reviewed_at: "now",
+        },
+      ])
+    },
+    processTestTimeout,
+  )
 })
 
 describe("AFS response validation", () => {
-  test("rejects malformed CLI payloads at the server boundary", async () => {
-    await fakeCli("console.log(JSON.stringify({ unexpected: true }))")
+  test(
+    "rejects malformed CLI payloads at the server boundary",
+    async () => {
+      await fakeCli("console.log(JSON.stringify({ unexpected: true }))")
 
-    for (const path of [
-      "/api/summary",
-      "/api/session/pack",
-      "/api/missions?status=active",
-      "/api/approvals?status=pending",
-      "/api/health",
-    ]) {
-      const response = await BridgeApp.request(`http://localhost${path}`)
-      expect(response.status).toBe(502)
-      expect((await response.json()).error).toContain("AFS returned an invalid")
-    }
-  })
+      for (const path of [
+        "/api/summary",
+        "/api/session/pack",
+        "/api/missions?status=active",
+        "/api/approvals?status=pending",
+        "/api/health",
+      ]) {
+        const response = await BridgeApp.request(`http://localhost${path}`)
+        expect(response.status).toBe(502)
+        expect((await response.json()).error).toContain("AFS returned an invalid")
+      }
+    },
+    validationTestTimeout,
+  )
 })
 
 test("the bridge defaults to loopback", () => {
@@ -121,11 +133,15 @@ test("resolves the AFS CLI portably with AFS_BIN taking priority", async () => {
   expect((await (await BridgeApp.request("http://localhost/health")).json()).afs_cli).toBe("afs")
 })
 
-test("passes AFS arguments without shell interpretation", async () => {
-  await fakeCli("console.log(JSON.stringify(Bun.argv.slice(2)))")
-  const args = ["literal & value", 'quote"value']
-  expect(await runAfsJson<string[]>(args)).toEqual(args)
-})
+test(
+  "passes AFS arguments without shell interpretation",
+  async () => {
+    await fakeCli("console.log(JSON.stringify(Bun.argv.slice(2)))")
+    const args = ["literal & value", 'quote"value']
+    expect(await runAfsJson<string[]>(args)).toEqual(args)
+  },
+  processTestTimeout,
+)
 
 signalTest("timeouts return a bounded gateway error", async () => {
   await fakeCli(`
@@ -227,62 +243,60 @@ test.skipIf(process.platform !== "win32")(
   },
 )
 
-test("client abort terminates the server-side AFS process tree", async () => {
-  const directory = await fakeCli(`
+test(
+  "client abort terminates the server-side AFS process tree",
+  async () => {
+    const directory = await fakeCli(`
 const child = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 1000)"], { stdout: "inherit", stderr: "inherit" })
 await Bun.write(process.env.FAKE_PID_PATH, String(child.pid))
 setInterval(() => {}, 1_000)
   `)
-  const pidPath = join(directory, "request.pid")
-  process.env.FAKE_PID_PATH = pidPath
-  const server = Bun.serve({ hostname: DEFAULT_BRIDGE_HOST, port: 0, fetch: BridgeApp.fetch })
+    const pidPath = join(directory, "request.pid")
+    process.env.FAKE_PID_PATH = pidPath
+    const server = Bun.serve({ hostname: DEFAULT_BRIDGE_HOST, port: 0, fetch: BridgeApp.fetch })
 
-  try {
-    const abort = new AbortController()
-    const request = fetch(new URL("/api/summary", server.url), { signal: abort.signal }).catch(() => undefined)
-    let pid: number | undefined
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      pid = Number(await readFile(pidPath, "utf8").catch(() => "")) || undefined
-      if (pid !== undefined) break
-      await Bun.sleep(10)
+    try {
+      const abort = new AbortController()
+      const request = fetch(new URL("/api/summary", server.url), { signal: abort.signal }).catch(() => undefined)
+      const pid = await waitForPid(pidPath)
+      expect(pid).toBeDefined()
+
+      abort.abort()
+      await request
+      for (let attempt = 0; attempt < 20 && alive(pid!); attempt += 1) await Bun.sleep(250)
+      expect(alive(pid!)).toBeFalse()
+    } finally {
+      await server.stop(true)
     }
+  },
+  processTestTimeout,
+)
+
+test(
+  "graceful shutdown terminates active AFS child trees",
+  async () => {
+    const directory = await fakeCli(`
+const child = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 1000)"], { stdout: "inherit", stderr: "inherit" })
+await Bun.write(process.env.FAKE_PID_PATH, String(child.pid))
+setInterval(() => {}, 1_000)
+  `)
+    const pidPath = join(directory, "shutdown.pid")
+    process.env.FAKE_PID_PATH = pidPath
+    const result = runAfsJson([], { timeoutMs: 10_000 }).then(
+      () => undefined,
+      (error) => error,
+    )
+
+    const pid = await waitForPid(pidPath)
     expect(pid).toBeDefined()
 
-    abort.abort()
-    await request
+    await shutdownAfsProcesses()
+    expect(await result).toBeInstanceOf(Error)
     for (let attempt = 0; attempt < 20 && alive(pid!); attempt += 1) await Bun.sleep(250)
     expect(alive(pid!)).toBeFalse()
-  } finally {
-    await server.stop(true)
-  }
-})
-
-test("graceful shutdown terminates active AFS child trees", async () => {
-  const directory = await fakeCli(`
-const child = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 1000)"], { stdout: "inherit", stderr: "inherit" })
-await Bun.write(process.env.FAKE_PID_PATH, String(child.pid))
-setInterval(() => {}, 1_000)
-  `)
-  const pidPath = join(directory, "shutdown.pid")
-  process.env.FAKE_PID_PATH = pidPath
-  const result = runAfsJson([], { timeoutMs: 10_000 }).then(
-    () => undefined,
-    (error) => error,
-  )
-
-  let pid: number | undefined
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    pid = Number(await readFile(pidPath, "utf8").catch(() => "")) || undefined
-    if (pid !== undefined) break
-    await Bun.sleep(10)
-  }
-  expect(pid).toBeDefined()
-
-  await shutdownAfsProcesses()
-  expect(await result).toBeInstanceOf(Error)
-  for (let attempt = 0; attempt < 20 && alive(pid!); attempt += 1) await Bun.sleep(250)
-  expect(alive(pid!)).toBeFalse()
-})
+  },
+  processTestTimeout,
+)
 
 signalTest("termination kills a running child", async () => {
   const directory = await fakeCli(`

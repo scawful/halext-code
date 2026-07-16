@@ -273,36 +273,53 @@ exit 0
       finish("error")
     }, 7_000)
     timer.unref()
-    poll = setInterval(() => {
+    const readResult = () => {
       let result = ""
       try {
         result = readFileSync(resultPath, "ascii").trim()
       } catch {}
-      if (result === "descendants") finish("descendants")
-      else if (result === "clean") finish("clean")
-      else if (result === "error") finish("error")
+      return result
+    }
+    poll = setInterval(() => {
+      // Descendant discovery is the fail-closed verdict; report it before
+      // taskkill drains. Clean/error helpers exit immediately, so wait for
+      // `close` and avoid leaving a helper behind between short polls.
+      if (readResult() === "descendants") finish("descendants")
     }, 25)
     poll.unref()
 
-    const launch = (command: "pwsh.exe" | "powershell.exe") => {
+    const launch = (command: "powershell.exe" | "pwsh.exe") => {
       if (settled) return
+      let current: ChildProcess
       try {
-        cleaner = spawn(
+        current = spawn(
           command,
           ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
           { stdio: "ignore", windowsHide: true },
         )
+        cleaner = current
       } catch {
-        if (command === "pwsh.exe") launch("powershell.exe")
+        if (command === "powershell.exe") launch("pwsh.exe")
         else finish("error")
         return
       }
-      cleaner.once("error", () => {
-        if (command === "pwsh.exe") launch("powershell.exe")
+      current.once("error", () => {
+        if (cleaner !== current || settled) return
+        if (command === "powershell.exe") launch("pwsh.exe")
+        else finish("error")
+      })
+      current.once("close", () => {
+        if (cleaner !== current || settled) return
+        const result = readResult()
+        if (result === "clean" || result === "descendants" || result === "error") finish(result)
+        else if (command === "powershell.exe") launch("pwsh.exe")
         else finish("error")
       })
     }
-    launch("pwsh.exe")
+    // Windows PowerShell is present on every supported Windows host and has
+    // materially lower cold-start latency on GitHub's runners. PowerShell 7
+    // remains the compatibility fallback.
+    launch("powershell.exe")
   })
   const tracked = trackedCleanup(task)
   windowsCleanups.set(proc, tracked)

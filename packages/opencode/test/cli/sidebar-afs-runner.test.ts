@@ -4,6 +4,8 @@ import { join } from "node:path"
 import { run } from "../../src/cli/cmd/tui/routes/session/sidebar-afs-runner"
 import { tmpdir } from "../fixture/fixture"
 
+const processTestTimeout = { timeout: process.platform === "win32" ? 20_000 : 5_000 }
+
 function alive(pid: number) {
   try {
     process.kill(pid, 0)
@@ -14,39 +16,47 @@ function alive(pid: number) {
 }
 
 describe("sidebar AFS runner", () => {
-  test("captures successful output without a shell", async () => {
-    const result = await run([process.execPath, "-e", 'console.log("grounded")'], {
-      signal: new AbortController().signal,
-      timeout: process.platform === "win32" ? 10_000 : 2_000,
-      limit: 1_024,
-    })
+  test(
+    "captures successful output without a shell",
+    async () => {
+      const result = await run([process.execPath, "-e", 'console.log("grounded")'], {
+        signal: new AbortController().signal,
+        timeout: process.platform === "win32" ? 10_000 : 2_000,
+        limit: 1_024,
+      })
 
-    expect(result?.code).toBe(0)
-    expect(result?.stdout.toString().trim()).toBe("grounded")
-  })
+      expect(result?.code).toBe(0)
+      expect(result?.stdout.toString().trim()).toBe("grounded")
+    },
+    processTestTimeout,
+  )
 
-  test("passes arguments without shell interpretation", async () => {
-    await using tmp = await tmpdir()
-    const file = join(tmp.path, process.platform === "win32" ? "afs.cmd" : "afs")
-    if (process.platform === "win32") {
-      await Bun.write(
-        file,
-        `@echo off\r\n"${process.execPath}" -e "console.log(JSON.stringify(Bun.argv.slice(1)))" %*\r\n`,
-      )
-    } else {
-      await Bun.write(file, "#!/usr/bin/env bun\nconsole.log(JSON.stringify(Bun.argv.slice(2)))\n")
-      await chmod(file, 0o755)
-    }
-    const args = ["literal & value", 'quote"value']
-    const result = await run([file, ...args], {
-      signal: new AbortController().signal,
-      timeout: process.platform === "win32" ? 10_000 : 2_000,
-      limit: 1_024,
-    })
+  test(
+    "passes arguments without shell interpretation",
+    async () => {
+      await using tmp = await tmpdir()
+      const file = join(tmp.path, process.platform === "win32" ? "afs.cmd" : "afs")
+      if (process.platform === "win32") {
+        await Bun.write(
+          file,
+          `@echo off\r\n"${process.execPath}" -e "console.log(JSON.stringify(Bun.argv.slice(1)))" %*\r\n`,
+        )
+      } else {
+        await Bun.write(file, "#!/usr/bin/env bun\nconsole.log(JSON.stringify(Bun.argv.slice(2)))\n")
+        await chmod(file, 0o755)
+      }
+      const args = ["literal & value", 'quote"value']
+      const result = await run([file, ...args], {
+        signal: new AbortController().signal,
+        timeout: process.platform === "win32" ? 10_000 : 2_000,
+        limit: 1_024,
+      })
 
-    expect(result?.code).toBe(0)
-    expect(JSON.parse(result?.stdout.toString() ?? "null")).toEqual(args)
-  })
+      expect(result?.code).toBe(0)
+      expect(JSON.parse(result?.stdout.toString() ?? "null")).toEqual(args)
+    },
+    processTestTimeout,
+  )
 
   test("bounds stdout and stderr while they stream", async () => {
     for (const stream of ["stdout", "stderr"] as const) {
@@ -140,6 +150,7 @@ describe("sidebar AFS runner", () => {
       expect(result).toBeUndefined()
       expect(elapsed).toBeLessThan(8_000)
     },
+    processTestTimeout,
   )
 
   test("honors a caller abort before the wall-clock timeout", async () => {
