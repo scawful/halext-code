@@ -18,27 +18,19 @@ function cleanupWindowsDescendants(pid: number): Promise<DescendantCleanup> {
 $ErrorActionPreference = 'Stop'
 $resultPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedResultPath}'))
 $rootPid = [uint32]${pid}
-$all = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId)
+$targets = @(
+  Get-CimInstance -Query "SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = $rootPid" |
+    ForEach-Object { [uint32]$_.ProcessId }
+)
 $ErrorActionPreference = 'SilentlyContinue'
-$pending = @($rootPid)
-$targets = @()
-while ($pending.Count -gt 0) {
-  $next = @()
-  foreach ($parentPid in $pending) {
-    $next += @($all | Where-Object { [uint32]$_.ParentProcessId -eq [uint32]$parentPid } | ForEach-Object { [uint32]$_.ProcessId })
-  }
-  $next = @($next | Where-Object { $targets -notcontains $_ } | Sort-Object -Unique)
-  $targets += $next
-  $pending = $next
-}
 if ($targets.Count -eq 0) {
-  [IO.File]::WriteAllText($resultPath, 'clean', [Text.Encoding]::ASCII)
+  Set-Content -LiteralPath $resultPath -Value 'clean' -NoNewline -Encoding Ascii
   exit 0
 }
 foreach ($targetPid in $targets) {
   & taskkill.exe /PID $targetPid /T /F *> $null
 }
-[IO.File]::WriteAllText($resultPath, 'descendants', [Text.Encoding]::ASCII)
+Set-Content -LiteralPath $resultPath -Value 'descendants' -NoNewline -Encoding Ascii
 exit 0
 `
 
@@ -89,9 +81,8 @@ exit 0
 function terminateWindows(proc: ChildProcess, pid: number, cleanupDescendants: () => Promise<DescendantCleanup>) {
   // taskkill handles the ordinary case while the parent is still alive. A direct
   // child can exit before our timeout while one of its children keeps inherited
-  // stdout open, though; taskkill cannot root a tree at that dead PID. Snapshot
-  // Win32_Process as a fallback and kill any surviving descendants by their own
-  // PIDs, preserving tree cleanup for that orphaned-parent case.
+  // stdout open, though; taskkill cannot root a tree at that dead PID. Query
+  // surviving direct children and kill each remaining tree by its own PID.
   try {
     const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
       stdio: "ignore",
