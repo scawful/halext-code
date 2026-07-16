@@ -28,6 +28,11 @@ describe("Filesystem.contains", () => {
   test("handles prefix collision edge cases", () => {
     expect(Filesystem.contains("/project", "/project-other/file")).toBe(false)
     expect(Filesystem.contains("/project", "/projectfile")).toBe(false)
+    expect(Filesystem.contains("/project", "/project/..cache/file")).toBe(true)
+  })
+
+  test.skipIf(process.platform !== "win32")("blocks paths on another Windows drive", () => {
+    expect(Filesystem.contains("C:\\project", "D:\\project\\file")).toBe(false)
   })
 })
 
@@ -182,13 +187,14 @@ describe("Instance.containsPath", () => {
     })
   })
 
-  test("non-git project does not allow arbitrary paths via worktree='/'", async () => {
+  test("non-git project does not allow arbitrary paths via its root sentinel", async () => {
     await using tmp = await tmpdir() // no git: true
 
     await Instance.provide({
       directory: tmp.path,
       fn: () => {
-        // worktree is "/" for non-git projects, but containsPath should NOT allow all paths
+        expect(Instance.project.vcs).not.toBe("git")
+        // The root sentinel must not allow all paths on the volume.
         expect(Instance.containsPath(path.join(tmp.path, "file.txt"))).toBe(true)
         expect(Instance.containsPath("/etc/passwd")).toBe(false)
         expect(Instance.containsPath("/tmp/other")).toBe(false)

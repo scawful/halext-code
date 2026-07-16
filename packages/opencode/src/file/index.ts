@@ -393,12 +393,22 @@ export namespace File {
       cache = result
       fetching = false
     }
-    fn(cache)
+    const scan = (result: Entry) => {
+      return fn(result).catch((err) => {
+        fetching = false
+        log.warn("background file scan failed", {
+          directory: Instance.directory,
+          error: err,
+        })
+      })
+    }
+    const ready = scan(cache)
 
     return {
+      ready,
       async files() {
         if (!fetching) {
-          fn({
+          void scan({
             files: [],
             dirs: [],
           })
@@ -409,7 +419,7 @@ export namespace File {
   })
 
   export function init() {
-    state()
+    return state().then((x) => x.ready)
   }
 
   export async function status() {

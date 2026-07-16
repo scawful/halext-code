@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { join } from "path"
+import { join, parse } from "path"
 import { AFSContextPlugin } from "../../../../.opencode/plugins/afs-context"
 
 describe("plugin.afs-context", () => {
-  const dir = "/tmp/repo/packages/opencode"
-  const root = "/tmp/repo"
-  const ctx = "/tmp/repo/.context"
+  const root = join(parse(process.cwd()).root, "tmp", "repo")
+  const dir = join(root, "packages", "opencode")
+  const ctx = join(root, ".context")
 
   test("adds repo-local AFS guidance", async () => {
     const plugin = await AFSContextPlugin({ directory: dir, worktree: root } as any)
@@ -41,7 +41,7 @@ describe("plugin.afs-context", () => {
 
   test("keeps absolute paths unchanged and normalizes .context root path", async () => {
     const plugin = await AFSContextPlugin({ directory: dir, worktree: root } as any)
-    const abs = "/tmp/elsewhere/file.md"
+    const abs = join(parse(root).root, "tmp", "elsewhere", "file.md")
     const out = {
       args: {
         path: abs,
