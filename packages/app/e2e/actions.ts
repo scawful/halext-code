@@ -244,7 +244,10 @@ export async function seedProjects(page: Page, input: { directory: string; extra
 export async function createTestProject() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-e2e-project-"))
 
-  await fs.writeFile(path.join(root, "README.md"), "# e2e\n")
+  // Project identity is derived from the root commit. Parallel fixtures can
+  // otherwise create byte-identical commits in the same second and race on
+  // one shared project row.
+  await fs.writeFile(path.join(root, "README.md"), `# e2e\n\n${path.basename(root)}\n`)
 
   execSync("git init", { cwd: root, stdio: "ignore" })
   execSync("git config core.fsmonitor false", { cwd: root, stdio: "ignore" })
