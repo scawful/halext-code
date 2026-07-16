@@ -24,11 +24,15 @@ while ($pending.Count -gt 0) {
   $targets += $next
   $pending = $next
 }
-if ($targets.Count -eq 0) { exit 0 }
+if ($targets.Count -eq 0) {
+  [Console]::Out.Write('clean')
+  exit 0
+}
 foreach ($targetPid in $targets) {
   & taskkill.exe /PID $targetPid /T /F *> $null
 }
-exit 42
+[Console]::Out.Write('descendants')
+exit 0
 `
 
   return new Promise((resolve) => {
@@ -37,7 +41,7 @@ exit 42
       cleaner = spawn(
         "powershell.exe",
         ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-        { stdio: "ignore", windowsHide: true },
+        { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
       )
     } catch {
       resolve("error")
@@ -49,6 +53,8 @@ exit 42
       if (settled) return
       settled = true
       clearTimeout(timer)
+      cleaner.stdout?.destroy()
+      cleaner.unref()
       resolve(result)
     }
     const timer = setTimeout(() => {
@@ -56,8 +62,16 @@ exit 42
       finish("error")
     }, 5_000)
     timer.unref()
+    let output = ""
+    cleaner.stdout?.on("data", (chunk: Buffer) => {
+      // PowerShell can keep provider handles open after the script has
+      // produced its result. Consume the explicit result instead of waiting
+      // for Bun's delayed process lifecycle events.
+      output += chunk.toString().replaceAll("\0", "")
+      if (output.includes("descendants")) finish("descendants")
+      else if (output.includes("clean")) finish("clean")
+    })
     cleaner.once("error", () => finish("error"))
-    cleaner.once("close", (code) => finish(code === 0 ? "clean" : code === 42 ? "descendants" : "error"))
   })
 }
 
