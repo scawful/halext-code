@@ -8,6 +8,8 @@ describe("control-plane/workspace-server SSE", () => {
     const app = WorkspaceServerRoutes()
     const stop = new AbortController()
     const seen: unknown[] = []
+    const listeners = GlobalBus.listenerCount("event")
+    let parser = Promise.resolve()
     try {
       const response = await app.request("/event", {
         signal: stop.signal,
@@ -21,7 +23,7 @@ describe("control-plane/workspace-server SSE", () => {
           reject(new Error("timed out waiting for workspace.test event"))
         }, 3000)
 
-        void parseSSE(response.body!, stop.signal, (event) => {
+        parser = parseSSE(response.body!, stop.signal, (event) => {
           seen.push(event)
           const next = event as { type?: string }
           if (next.type === "server.connected") {
@@ -51,6 +53,8 @@ describe("control-plane/workspace-server SSE", () => {
       })
     } finally {
       stop.abort()
+      await parser
     }
+    expect(GlobalBus.listenerCount("event")).toBe(listeners)
   })
 })

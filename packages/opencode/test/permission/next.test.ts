@@ -21,6 +21,20 @@ async function rejectAll(message?: string) {
   }
 }
 
+async function rejectAndSettle(...asks: Promise<unknown>[]) {
+  let settled = false
+  void Promise.all(asks.map((ask) => ask.catch(() => undefined))).then(() => {
+    settled = true
+  })
+  const end = Date.now() + 2_000
+  do {
+    await rejectAll()
+    if (settled) return
+    await Bun.sleep(25)
+  } while (Date.now() < end)
+  if (!settled) throw new Error("permission request did not settle after cleanup")
+}
+
 async function waitForPending(count: number, timeout = 4_000) {
   const end = Date.now() + timeout
   do {
@@ -45,6 +59,11 @@ async function tmpWithPermissionPlugin(source: string) {
       )
     },
   })
+}
+
+async function initializePermissionPlugins() {
+  const { Plugin } = await import("../../src/plugin")
+  await Plugin.list()
 }
 
 // fromConfig tests
@@ -516,6 +535,7 @@ test("ask - plugin escalates allow without a later downgrade and preserves metad
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
+      await initializePermissionPlugins()
       let seen: PermissionNext.Request | undefined
       const unsub = Bus.subscribe(PermissionNext.Event.Asked, (event) => {
         seen = event.properties
@@ -540,11 +560,69 @@ test("ask - plugin escalates allow without a later downgrade and preserves metad
         await expect(ask).resolves.toBeUndefined()
       } finally {
         unsub()
-        await rejectAll()
-        await ask.catch(() => {})
+        await rejectAndSettle(ask)
       }
     },
   })
+}, 30_000)
+
+test("ask - cleanup settles a request that becomes pending after the initial wait", async () => {
+  const gateKey = "__opencode_permission_hook_gate"
+  let release = () => {}
+  const gate = {
+    started: false,
+    wait: new Promise<void>((resolve) => {
+      release = resolve
+    }),
+  }
+  const globals = globalThis as unknown as Record<string, unknown>
+  globals[gateKey] = gate
+  try {
+    await using tmp = await tmpWithPermissionPlugin(`
+      export default async () => ({
+        "permission.ask": async (_input, output) => {
+          const gate = globalThis[${JSON.stringify(gateKey)}]
+          gate.started = true
+          await gate.wait
+          output.status = "ask"
+        },
+      })
+    `)
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        await initializePermissionPlugins()
+        const ask = PermissionNext.ask({
+          id: PermissionID.make("per_plugin_late_ask"),
+          sessionID: SessionID.make("session_plugin_late_ask"),
+          permission: "bash",
+          patterns: ["send-message"],
+          metadata: {},
+          always: [],
+          ruleset: [{ permission: "bash", pattern: "*", action: "allow" }],
+        })
+        const outcome = ask.then(
+          () => "resolved" as const,
+          () => "rejected" as const,
+        )
+
+        try {
+          const end = Date.now() + 2_000
+          while (!gate.started && Date.now() < end) await Bun.sleep(10)
+          expect(gate.started).toBeTrue()
+          expect(await PermissionNext.list()).toHaveLength(0)
+        } finally {
+          release()
+          await rejectAndSettle(ask)
+        }
+        expect(await outcome).toBe("rejected")
+        expect(await PermissionNext.list()).toHaveLength(0)
+      },
+    })
+  } finally {
+    release()
+    delete globals[gateKey]
+  }
 }, 30_000)
 
 test("ask - plugin deny cannot be downgraded by a later hook", async () => {
@@ -563,6 +641,7 @@ test("ask - plugin deny cannot be downgraded by a later hook", async () => {
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
+      await initializePermissionPlugins()
       await expect(
         PermissionNext.ask({
           sessionID: SessionID.make("session_plugin_deny"),
@@ -589,6 +668,7 @@ test("ask - plugin cannot downgrade an evaluated ask", async () => {
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
+      await initializePermissionPlugins()
       const ask = PermissionNext.ask({
         id: PermissionID.make("per_plugin_no_downgrade"),
         sessionID: SessionID.make("session_plugin_no_downgrade"),
@@ -602,8 +682,7 @@ test("ask - plugin cannot downgrade an evaluated ask", async () => {
       try {
         expect(await waitForPending(1)).toHaveLength(1)
       } finally {
-        await rejectAll()
-        await ask.catch(() => {})
+        await rejectAndSettle(ask)
       }
     },
   })
@@ -626,6 +705,7 @@ test("ask - failed plugin hook is isolated and later hooks still run", async () 
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
+      await initializePermissionPlugins()
       const ask = PermissionNext.ask({
         id: PermissionID.make("per_plugin_error"),
         sessionID: SessionID.make("session_plugin_error"),
@@ -641,8 +721,7 @@ test("ask - failed plugin hook is isolated and later hooks still run", async () 
         expect(list).toHaveLength(1)
         expect(list[0].metadata).toEqual({ later: true })
       } finally {
-        await rejectAll()
-        await ask.catch(() => {})
+        await rejectAndSettle(ask)
       }
     },
   })
@@ -657,6 +736,7 @@ test("ask - failed plugin initialization makes bash fail closed", async () => {
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
+      await initializePermissionPlugins()
       const ask = PermissionNext.ask({
         id: PermissionID.make("per_plugin_init_error"),
         sessionID: SessionID.make("session_plugin_init_error"),
@@ -670,8 +750,7 @@ test("ask - failed plugin initialization makes bash fail closed", async () => {
       try {
         expect(await waitForPending(1)).toHaveLength(1)
       } finally {
-        await rejectAll()
-        await ask.catch(() => {})
+        await rejectAndSettle(ask)
       }
     },
   })
@@ -688,6 +767,7 @@ test("reply - always preserves a concurrent plugin-gated request", async () => {
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
+      await initializePermissionPlugins()
       const base = PermissionNext.ask({
         id: PermissionID.make("per_plugin_base"),
         sessionID: SessionID.make("session_plugin_always"),
@@ -716,8 +796,7 @@ test("reply - always preserves a concurrent plugin-gated request", async () => {
         await PermissionNext.reply({ requestID: PermissionID.make("per_plugin_guarded"), reply: "once" })
         await expect(guarded).resolves.toBeUndefined()
       } finally {
-        await rejectAll()
-        await Promise.all([base.catch(() => {}), guarded.catch(() => {})])
+        await rejectAndSettle(base, guarded)
       }
     },
   })
