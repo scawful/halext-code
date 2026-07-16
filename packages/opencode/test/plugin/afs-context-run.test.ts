@@ -89,11 +89,13 @@ describe("plugin.afs-context bounded runner", () => {
       await using tmp = await tmpdir()
       const marker = join(tmp.path, "descendant.pid")
       const start = Date.now()
+      // Keep the nested process independent of Bun's parent lifecycle so this
+      // deterministically exercises the runner's orphan cleanup path.
       const text = await run(
         [
           process.execPath,
           "-e",
-          `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdout: "inherit" }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
+          `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdout: "inherit", detached: true }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
         ],
         { timeout: 10_000, limit: 1_024 },
       )
