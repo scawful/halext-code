@@ -371,6 +371,10 @@ function envSplitString(tokens: string[], index: number): string | null {
       i++
       continue
     }
+    if (["--debug", "--ignore-environment"].includes(token)) {
+      i++
+      continue
+    }
     if (/^--(?:block-signal|default-signal|ignore-signal)(?:=.*)?$/.test(token) || token === "--list-signal-handling") {
       i++
       continue

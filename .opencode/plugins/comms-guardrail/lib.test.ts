@@ -139,6 +139,8 @@ describe("detectCommand", () => {
     expect(detectCommand('env -S "-C /tmp gchat post" hi')).toBe("Google Chat")
     expect(detectCommand('env -vS "gchat post hi"')).toBe("Google Chat")
     expect(detectCommand('env -ivS "gchat post hi"')).toBe("Google Chat")
+    expect(detectCommand('env --debug -S "gchat post hi"')).toBe("Google Chat")
+    expect(detectCommand('env --ignore-environment --split-string="gchat post hi"')).toBe("Google Chat")
     expect(detectCommand("env -S \"-vS 'gchat post hi'\"")).toBe("Google Chat")
     expect(detectCommand("command -p -- gchat post hi")).toBe("Google Chat")
     expect(detectCommand("timeout 5 gchat post hi")).toBe("Google Chat")
