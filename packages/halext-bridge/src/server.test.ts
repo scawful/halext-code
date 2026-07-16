@@ -226,7 +226,6 @@ test.skipIf(process.platform !== "win32")(
 
     const pid = Number(await readFile(pidPath, "utf8"))
     expect(pid).toBeGreaterThan(0)
-    for (let attempt = 0; attempt < 20 && alive(pid); attempt++) await Bun.sleep(250)
     expect(alive(pid)).toBeFalse()
   },
 )

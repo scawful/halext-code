@@ -53,16 +53,16 @@ async function directWindowsChildren(parentPid: number) {
   const entrySize = pointerSize === 8 ? 568 : 556
   const parentOffset = pointerSize === 8 ? 32 : 24
   const kernel32 = dlopen("kernel32.dll", {
-    CreateToolhelp32Snapshot: { args: ["u32", "u32"], returns: "ptr" },
-    Process32FirstW: { args: ["ptr", "ptr"], returns: "i32" },
-    Process32NextW: { args: ["ptr", "ptr"], returns: "i32" },
-    CloseHandle: { args: ["ptr"], returns: "i32" },
+    CreateToolhelp32Snapshot: { args: ["u32", "u32"], returns: "u64" },
+    Process32FirstW: { args: ["u64", "ptr"], returns: "i32" },
+    Process32NextW: { args: ["u64", "ptr"], returns: "i32" },
+    CloseHandle: { args: ["u64"], returns: "i32" },
   } as const)
   const entry = new Uint8Array(entrySize)
   const view = new DataView(entry.buffer, entry.byteOffset, entry.byteLength)
   view.setUint32(0, entrySize, true)
   const snapshot = kernel32.symbols.CreateToolhelp32Snapshot(0x00000002, 0)
-  if (!snapshot) {
+  if (snapshot === 0n || snapshot === 0xffffffffffffffffn) {
     kernel32.close()
     throw new Error("CreateToolhelp32Snapshot failed")
   }
@@ -94,18 +94,18 @@ function launchTaskkill(pid: number) {
       return
     }
     let settled = false
-    const finish = (launched: boolean) => {
+    const finish = (ok: boolean) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      child.unref()
-      resolve(launched)
+      resolve(ok)
     }
     const timer = setTimeout(() => {
       child.kill("SIGKILL")
+      child.unref()
       finish(false)
     }, 1_000)
-    child.once("spawn", () => finish(true))
+    child.once("close", (code) => finish(code === 0))
     child.once("error", () => finish(false))
   })
 }
@@ -118,8 +118,8 @@ async function cleanupWindowsDescendants(pid: number): Promise<DescendantCleanup
     return "error"
   }
   if (targets.length === 0) return "clean"
-  const launched = await Promise.all(targets.map(launchTaskkill))
-  return launched.every(Boolean) ? "descendants" : "error"
+  const killed = await Promise.all(targets.map(launchTaskkill))
+  return killed.every(Boolean) ? "descendants" : "error"
 }
 
 function windows(proc: ChildProcess, pid: number, cleanupDescendants: () => Promise<DescendantCleanup>) {
