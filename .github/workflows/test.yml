@@ -47,7 +47,7 @@ jobs:
           git config --global user.name "opencode"
 
       - name: Build bridge artifact
-        run: bun --cwd packages/halext-bridge run build
+        run: bun run --cwd packages/halext-bridge build
 
       - name: Smoke bridge artifact
         run: >-
