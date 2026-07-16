@@ -1,4 +1,8 @@
 import { spawn, type ChildProcess } from "child_process"
+import { randomUUID } from "crypto"
+import { readFileSync, unlinkSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
 
 export type RunOptions = {
   timeout: number
@@ -8,8 +12,11 @@ export type RunOptions = {
 type DescendantCleanup = "clean" | "descendants" | "error"
 
 function cleanupWindowsDescendants(pid: number): Promise<DescendantCleanup> {
+  const resultPath = join(tmpdir(), `hcode-afs-cleanup-${process.pid}-${randomUUID()}.txt`)
+  const encodedResultPath = Buffer.from(resultPath).toString("base64")
   const script = `
 $ErrorActionPreference = 'Stop'
+$resultPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedResultPath}'))
 $rootPid = [uint32]${pid}
 $all = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId)
 $ErrorActionPreference = 'SilentlyContinue'
@@ -25,13 +32,13 @@ while ($pending.Count -gt 0) {
   $pending = $next
 }
 if ($targets.Count -eq 0) {
-  [Console]::Out.Write('clean')
+  [IO.File]::WriteAllText($resultPath, 'clean', [Text.Encoding]::ASCII)
   exit 0
 }
 foreach ($targetPid in $targets) {
   & taskkill.exe /PID $targetPid /T /F *> $null
 }
-[Console]::Out.Write('descendants')
+[IO.File]::WriteAllText($resultPath, 'descendants', [Text.Encoding]::ASCII)
 exit 0
 `
 
@@ -41,7 +48,7 @@ exit 0
       cleaner = spawn(
         "powershell.exe",
         ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-        { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
+        { stdio: "ignore", windowsHide: true },
       )
     } catch {
       resolve("error")
@@ -49,28 +56,32 @@ exit 0
     }
 
     let settled = false
+    let poll: ReturnType<typeof setInterval> | undefined
     const finish = (result: DescendantCleanup) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      cleaner.stdout?.destroy()
+      if (poll) clearInterval(poll)
+      try {
+        unlinkSync(resultPath)
+      } catch {}
       cleaner.unref()
       resolve(result)
     }
     const timer = setTimeout(() => {
       cleaner.kill("SIGKILL")
       finish("error")
-    }, 5_000)
+    }, 7_000)
     timer.unref()
-    let output = ""
-    cleaner.stdout?.on("data", (chunk: Buffer) => {
-      // PowerShell can keep provider handles open after the script has
-      // produced its result. Consume the explicit result instead of waiting
-      // for Bun's delayed process lifecycle events.
-      output += chunk.toString().replaceAll("\0", "")
-      if (output.includes("descendants")) finish("descendants")
-      else if (output.includes("clean")) finish("clean")
-    })
+    poll = setInterval(() => {
+      let result = ""
+      try {
+        result = readFileSync(resultPath, "ascii").trim()
+      } catch {}
+      if (result === "descendants") finish("descendants")
+      else if (result === "clean") finish("clean")
+    }, 25)
+    poll.unref()
     cleaner.once("error", () => finish("error"))
   })
 }
