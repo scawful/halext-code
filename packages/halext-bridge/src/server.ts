@@ -1,16 +1,17 @@
 import { extname, resolve, relative, sep } from "node:path"
 import { open, readdir, realpath, stat } from "node:fs/promises"
+import { spawn, type ChildProcess } from "node:child_process"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { z } from "zod"
-import type { AfsApproval, AfsBootstrapSummary, AfsContextPack, AfsHealthSummary, AfsMission } from "./index"
+import { parseApprovals, parseHealth, parseMissions, parseSummary, type AfsContextPack } from "./index"
 
-const DEFAULT_AFS_CLI = "/Users/scawful/src/lab/afs/scripts/afs"
+const DEFAULT_AFS_CLI = "afs"
 const DEFAULT_PROJECT_PATH = process.env.HALEXT_BRIDGE_DEFAULT_PATH ?? resolve(import.meta.dir, "../../..")
 const DEFAULT_PORT = Number(process.env.HALEXT_BRIDGE_PORT ?? "4319")
 export const DEFAULT_BRIDGE_HOST = "127.0.0.1"
-const TERMINATION_GRACE_MS = 1_000
+const MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 
 const SummaryQuerySchema = z.object({
   path: z.string().optional(),
@@ -171,69 +172,188 @@ function allowedOrigin(input?: string) {
 }
 
 function afsCli() {
-  return process.env.AFS_CLI?.trim() || DEFAULT_AFS_CLI
+  return process.env.AFS_BIN?.trim() || process.env.AFS_CLI?.trim() || DEFAULT_AFS_CLI
 }
 
-function wait(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms))
+function command(cmd: string[]): [string, ...string[]] {
+  const file = cmd[0]
+  if (!file) throw new Error("Command is required")
+  if (process.platform !== "win32" || !/\.(cmd|bat)$/i.test(file)) return [file, ...cmd.slice(1)]
+  // Batch files need a Windows command host. Encode argv before PowerShell
+  // sees it so paths and user-supplied values never become shell syntax.
+  const data = Buffer.from(JSON.stringify(cmd)).toString("base64")
+  const script = `
+$ErrorActionPreference = 'Stop'
+$json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}'))
+$parts = @(ConvertFrom-Json -InputObject $json)
+$exe = [string]$parts[0]
+$rest = @()
+if ($parts.Count -gt 1) {
+  $rest = @($parts[1..($parts.Count - 1)] | ForEach-Object { [string]$_ })
+}
+& $exe @rest
+exit $LASTEXITCODE
+`
+  return [
+    "powershell.exe",
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    script,
+  ]
 }
 
-export async function terminate(proc: ReturnType<typeof Bun.spawn>) {
+function windows(proc: ChildProcess, pid: number) {
   try {
-    proc.kill("SIGTERM")
+    const child = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    })
+    child.unref()
   } catch {}
 
-  const exited = await Promise.race([proc.exited.then(() => true), wait(TERMINATION_GRACE_MS).then(() => false)])
-  if (exited) return
-
+  // A direct parent can exit while a descendant keeps an inherited pipe
+  // open. taskkill cannot root a tree at that dead PID, so also discover
+  // surviving descendants from their recorded ParentProcessId values.
   try {
+    const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$rootPid = [uint32]${pid}
+$all = @(Get-CimInstance Win32_Process)
+$pending = @($rootPid)
+$targets = @()
+while ($pending.Count -gt 0) {
+  $next = @()
+  foreach ($parentPid in $pending) {
+    $next += @($all | Where-Object { [uint32]$_.ParentProcessId -eq [uint32]$parentPid } | ForEach-Object { [uint32]$_.ProcessId })
+  }
+  $next = @($next | Where-Object { $targets -notcontains $_ } | Sort-Object -Unique)
+  $targets += $next
+  $pending = $next
+}
+foreach ($targetPid in $targets) {
+  & taskkill.exe /PID $targetPid /T /F *> $null
+}
+`
+    const child = spawn(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+      { stdio: "ignore", windowsHide: true },
+    )
+    child.unref()
+  } catch {}
+
+  const timer = setTimeout(() => {
+    try {
+      proc.kill("SIGKILL")
+    } catch {}
+  }, 1_000)
+  timer.unref()
+}
+
+export function terminate(proc: ChildProcess) {
+  const pid = proc.pid
+  if (!pid) {
     proc.kill("SIGKILL")
-  } catch {}
-  await Promise.race([proc.exited, wait(TERMINATION_GRACE_MS)])
+    return
+  }
+  if (process.platform === "win32") {
+    windows(proc, pid)
+    return
+  }
+  try {
+    process.kill(-pid, "SIGKILL")
+  } catch {
+    proc.kill("SIGKILL")
+  }
 }
 
-export async function runAfsJson<T>(args: string[], options?: { timeoutMs?: number }) {
-  const proc = Bun.spawn({
-    cmd: [afsCli(), ...args],
-    stdout: "pipe",
-    stderr: "pipe",
-    env: process.env,
-  })
-
-  const stdoutPromise = new Response(proc.stdout).text()
-  const stderrPromise = new Response(proc.stderr).text()
+export async function runAfsJson<T>(args: string[], options?: { timeoutMs?: number; maxBytes?: number }) {
   const timeoutMs = options?.timeoutMs ?? 60000
+  const maxBytes = options?.maxBytes ?? MAX_OUTPUT_BYTES
 
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+  return new Promise<T>((resolve, reject) => {
+    let proc: ChildProcess
+    try {
+      const cmd = command([afsCli(), ...args])
+      proc = spawn(cmd[0], cmd.slice(1), {
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: process.platform !== "win32",
+        windowsHide: true,
+        env: process.env,
+      })
+    } catch (error) {
+      reject(new BridgeError(error instanceof Error ? error.message : "Failed to start AFS command", 502))
+      return
+    }
+    if (!proc.stdout || !proc.stderr) {
+      terminate(proc)
+      reject(new BridgeError("AFS command output is unavailable", 502))
+      return
+    }
 
-  let exitCode: number | undefined
+    const stdout: Buffer[] = []
+    const stderr: Buffer[] = []
+    let size = 0
+    let settled = false
+
+    const finish = (action: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      action()
+    }
+    const stop = (error: BridgeError) => {
+      if (settled) return
+      terminate(proc)
+      proc.stdout?.destroy()
+      proc.stderr?.destroy()
+      proc.unref()
+      finish(() => reject(error))
+    }
+    const collect = (chunks: Buffer[]) => (chunk: Buffer) => {
+      size += chunk.byteLength
+      if (size > maxBytes) {
+        stop(new BridgeError(`AFS command output exceeded ${maxBytes} bytes`, 502))
+        return
+      }
+      chunks.push(chunk)
+    }
+    const timer = setTimeout(() => stop(new BridgeError(`AFS command timed out after ${timeoutMs}ms`, 504)), timeoutMs)
+
+    proc.stdout.on("data", collect(stdout))
+    proc.stderr.on("data", collect(stderr))
+    proc.stdout.once("error", (error) => stop(new BridgeError(error.message, 502)))
+    proc.stderr.once("error", (error) => stop(new BridgeError(error.message, 502)))
+    proc.once("error", (error) => stop(new BridgeError(`Failed to start AFS command: ${error.message}`, 502)))
+    proc.once("close", (code) => {
+      if (settled) return
+      const out = Buffer.concat(stdout).toString()
+      const err = Buffer.concat(stderr).toString()
+      if (code !== 0) {
+        finish(() => reject(new BridgeError(err.trim() || out.trim() || "AFS command failed", 502, err || out)))
+        return
+      }
+      try {
+        const value = JSON.parse(out) as T
+        finish(() => resolve(value))
+      } catch {
+        finish(() => reject(new BridgeError("AFS returned non-JSON output", 502, out || err)))
+      }
+    })
+  })
+}
+
+function validate<T>(value: unknown, parse: (value: unknown) => T) {
   try {
-    exitCode = await Promise.race([
-      proc.exited,
-      new Promise<undefined>((resolve) => {
-        timeoutHandle = setTimeout(() => resolve(undefined), timeoutMs)
-      }),
-    ])
-  } finally {
-    if (timeoutHandle) clearTimeout(timeoutHandle)
-  }
-
-  if (exitCode === undefined) {
-    await terminate(proc)
-    void Promise.allSettled([stdoutPromise, stderrPromise])
-    throw new BridgeError(`AFS command timed out after ${timeoutMs}ms`, 504)
-  }
-
-  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise])
-
-  if (exitCode !== 0) {
-    throw new BridgeError(stderr.trim() || stdout.trim() || "AFS command failed", 502, stderr || stdout)
-  }
-
-  try {
-    return JSON.parse(stdout) as T
-  } catch {
-    throw new BridgeError("AFS returned non-JSON output", 502, stdout || stderr)
+    return parse(value)
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message.replace(/^Bridge returned/, "AFS returned") : "AFS returned invalid output"
+    throw new BridgeError(message, 502)
   }
 }
 
@@ -325,9 +445,12 @@ export const BridgeApp = new Hono()
   .get("/api/summary", async (c) => {
     const query = SummaryQuerySchema.parse(c.req.query())
     const projectPath = resolveProjectPath(query.path)
-    const summary = await runAfsJson<AfsBootstrapSummary>(summaryArgs(projectPath, query.task_limit ?? 12, query.message_limit ?? 3), {
-      timeoutMs: 10000,
-    })
+    const summary = validate(
+      await runAfsJson<unknown>(summaryArgs(projectPath, query.task_limit ?? 12, query.message_limit ?? 3), {
+        timeoutMs: 10000,
+      }),
+      parseSummary,
+    )
     return c.json(summary)
   })
   .get("/api/session/pack", async (c) => {
@@ -339,18 +462,32 @@ export const BridgeApp = new Hono()
   })
   .get("/api/missions", async (c) => {
     const query = MissionQuerySchema.parse(c.req.query())
-    const args = ["mission", "list", "--json", "--path", resolveProjectPath(query.path), "--limit", String(query.limit ?? 20)]
+    const args = [
+      "mission",
+      "list",
+      "--json",
+      "--path",
+      resolveProjectPath(query.path),
+      "--limit",
+      String(query.limit ?? 20),
+    ]
     if (query.status) args.push("--status", query.status)
-    const missions = await runAfsJson<AfsMission[]>(args, { timeoutMs: 10000 })
+    const missions = validate(await runAfsJson<unknown>(args, { timeoutMs: 10000 }), parseMissions)
     return c.json(missions)
   })
   .get("/api/approvals", async (c) => {
     const query = ApprovalQuerySchema.parse(c.req.query())
-    const approvals = await runAfsJson<AfsApproval[]>(approvalArgs(query.status), { timeoutMs: 10000 })
+    const approvals = validate(
+      await runAfsJson<unknown>(approvalArgs(query.status), { timeoutMs: 10000 }),
+      parseApprovals,
+    )
     return c.json(query.status ? approvals.filter((item) => item.status === query.status) : approvals)
   })
   .get("/api/health", async (c) => {
-    const health = await runAfsJson<AfsHealthSummary>(["health", "status", "--json"], { timeoutMs: 20000 })
+    const health = validate(
+      await runAfsJson<unknown>(["health", "status", "--json"], { timeoutMs: 20000 }),
+      parseHealth,
+    )
     return c.json(health)
   })
   .get("/api/fs/list", async (c) => {

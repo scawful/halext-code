@@ -1,8 +1,8 @@
 import { createMemo, createResource, For, onCleanup, Show } from "solid-js"
-import { Process } from "@/util/process"
 import { useTheme } from "../../context/theme"
 import { useSync } from "../../context/sync"
 import { approvals, BYTES, context, missions, snapshot, type Snapshot } from "./sidebar-afs-data"
+import { run } from "./sidebar-afs-runner"
 
 // Fork-owned AFS sidebar section. Reads project-management signals (open
 // missions, pending approvals) straight from the AFS CLI so it works without
@@ -19,13 +19,8 @@ function cli() {
 }
 
 async function json(args: string[], signal: AbortSignal): Promise<Result> {
-  const result = await Process.run([cli(), ...args], {
-    nothrow: true,
-    abort: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-    timeout: 1_000,
-  }).catch(() => undefined)
+  const result = await run([cli(), ...args], { signal, timeout: 10_000, limit: BYTES })
   if (!result || result.code !== 0) return { ok: false }
-  if (result.stdout.byteLength > BYTES) return { ok: false }
   try {
     return { ok: true, value: JSON.parse(result.stdout.toString()) as unknown }
   } catch {

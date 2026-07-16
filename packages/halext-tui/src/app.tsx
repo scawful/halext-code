@@ -24,6 +24,7 @@ import {
   beginRefresh,
   ownsRefresh,
   prioritize,
+  refreshError,
   type Attention,
   type AttentionRefresh,
 } from "./attention"
@@ -432,6 +433,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
   let packRefresh: AttentionRefresh = { generation: 0, path: "" }
   let packAbort: AbortController | undefined
   let seen = [false, false, false]
+  let attentionError = ""
 
   const [projects, setProjects] = createSignal<Project[]>([])
   const [sessions, setSessions] = createSignal<GlobalSession[]>([])
@@ -511,6 +513,9 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       setAfsAttention(path ? "unavailable" : "ready")
     }
     if (!path) {
+      const state = refreshError(attentionError, errorText(), "")
+      attentionError = state.owned
+      if (state.visible !== errorText()) setErrorText(state.visible)
       if (attentionAbort === next) attentionAbort = undefined
       return
     }
@@ -532,10 +537,15 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       const failed = [summaryResult.status === "rejected", !missionReady, approvalResult.status === "rejected"]
       setAfsAttention(availability(failed, seen))
       seen = seen.map((value, index) => value || !failed[index])
+      const state = refreshError(
+        attentionError,
+        errorText(),
+        summaryResult.status === "rejected" ? explainError(summaryResult.reason) : "",
+      )
+      attentionError = state.owned
+      if (state.visible !== errorText()) setErrorText(state.visible)
       if (summaryResult.status === "fulfilled") {
         setAfsSummary(summaryResult.value)
-      } else {
-        setErrorText(explainError(summaryResult.reason))
       }
       if (missionReady) {
         setAfsMissions(prioritize([...activeMissionResult.value, ...blockedMissionResult.value]))

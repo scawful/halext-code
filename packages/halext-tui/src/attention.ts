@@ -29,3 +29,11 @@ export function availability(failed: boolean[], seen: boolean[]): Attention {
   if (!failed.some(Boolean)) return "ready"
   return failed.some((value, index) => value && !seen[index]) ? "unavailable" : "stale"
 }
+
+export function refreshError(owned: string, visible: string, next: string) {
+  if (next) return { owned: next, visible: next }
+  return {
+    owned: "",
+    visible: owned && visible === owned ? "" : visible,
+  }
+}

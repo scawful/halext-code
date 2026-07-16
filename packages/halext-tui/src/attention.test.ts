@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AfsMission } from "@halext/bridge"
-import { availability, beginRefresh, ownsRefresh, prioritize } from "./attention"
+import { availability, beginRefresh, ownsRefresh, prioritize, refreshError } from "./attention"
 
 function mission(mission_id: string, status: string): AfsMission {
   return {
@@ -60,5 +60,13 @@ describe("AFS attention", () => {
     expect(ownsRefresh(secondA, secondA, "/a")).toBe(true)
     expect(ownsRefresh(thirdA, firstA, "/a")).toBe(false)
     expect(ownsRefresh(thirdA, thirdA, "/a")).toBe(true)
+  })
+
+  test("clears a recovered AFS error without hiding an unrelated error", () => {
+    const failed = refreshError("", "", "AFS unavailable")
+    expect(failed).toEqual({ owned: "AFS unavailable", visible: "AFS unavailable" })
+    expect(refreshError(failed.owned, failed.visible, "")).toEqual({ owned: "", visible: "" })
+    expect(refreshError(failed.owned, "Prompt failed", "")).toEqual({ owned: "", visible: "Prompt failed" })
+    expect(refreshError("", "Prompt failed", "")).toEqual({ owned: "", visible: "Prompt failed" })
   })
 })
