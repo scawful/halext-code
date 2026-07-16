@@ -33,7 +33,6 @@ async function waitForPending(count: number, timeout = 4_000) {
 
 async function tmpWithPermissionPlugin(source: string) {
   return tmpdir({
-    git: true,
     init: async (dir) => {
       const plugin = path.join(dir, "permission-plugin.ts")
       await Bun.write(plugin, source)
