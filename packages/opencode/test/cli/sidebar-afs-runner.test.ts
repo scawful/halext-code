@@ -73,7 +73,7 @@ describe("sidebar AFS runner", () => {
       [
         process.execPath,
         "-e",
-        `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdout: "inherit", stderr: "inherit" }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
+        `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdout: "inherit", stderr: "inherit", detached: process.platform === "win32" }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
       ],
       {
         signal: new AbortController().signal,
@@ -123,7 +123,7 @@ describe("sidebar AFS runner", () => {
         [
           process.execPath,
           "-e",
-          `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
+          `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore", detached: true }); await Bun.write(${JSON.stringify(marker)}, String(child.pid)); process.exit(0)`,
         ],
         {
           signal: new AbortController().signal,

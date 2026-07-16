@@ -22,6 +22,7 @@ import hcodeGhostty from "../../../.opencode/themes/hcode-ghostty.json"
 import {
   availability,
   beginRefresh,
+  firstError,
   ownsRefresh,
   prioritize,
   refreshError,
@@ -608,8 +609,9 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
 
     if (generation !== workspaceGeneration) return
 
-    if (projectResult.error || sessionResult.error || mcpResult.error) {
-      setErrorText(explainError(projectResult.error) || explainError(sessionResult.error) || explainError(mcpResult.error))
+    const error = firstError(projectResult.error, sessionResult.error, mcpResult.error)
+    if (error) {
+      setErrorText(explainError(error))
       setLoadingWorkspace(false)
       return
     }

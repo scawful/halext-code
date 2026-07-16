@@ -30,6 +30,10 @@ export function availability(failed: boolean[], seen: boolean[]): Attention {
   return failed.some((value, index) => value && !seen[index]) ? "unavailable" : "stale"
 }
 
+export function firstError(...errors: unknown[]) {
+  return errors.find(Boolean)
+}
+
 export function refreshError(owned: string, visible: string, next: string, fallback = "") {
   if (next) {
     return {

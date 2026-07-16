@@ -165,7 +165,7 @@ test("timeouts terminate descendants after the direct parent exits", async () =>
     runAfsJson(
       [
         "-e",
-        `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdout: "inherit", stderr: "inherit" }); await Bun.write(${JSON.stringify(pidPath)}, String(child.pid)); process.exit(0)`,
+        `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdout: "inherit", stderr: "inherit", detached: process.platform === "win32" }); await Bun.write(${JSON.stringify(pidPath)}, String(child.pid)); process.exit(0)`,
       ],
       { timeoutMs: process.platform === "win32" ? 10_000 : 200 },
     ),
@@ -214,7 +214,7 @@ test.skipIf(process.platform !== "win32")(
       runAfsJson(
         [
           "-e",
-          `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }); await Bun.write(${JSON.stringify(pidPath)}, String(child.pid)); console.log("{}"); process.exit(0)`,
+          `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdin: "ignore", stdout: "ignore", stderr: "ignore", detached: true }); await Bun.write(${JSON.stringify(pidPath)}, String(child.pid)); console.log("{}"); process.exit(0)`,
         ],
         { timeoutMs: 10_000 },
       ),

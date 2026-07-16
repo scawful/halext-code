@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AfsMission } from "@halext/bridge"
-import { availability, beginRefresh, ownsRefresh, prioritize, refreshError } from "./attention"
+import { availability, beginRefresh, firstError, ownsRefresh, prioritize, refreshError } from "./attention"
 
 function mission(mission_id: string, status: string): AfsMission {
   return {
@@ -32,6 +32,12 @@ describe("AFS attention", () => {
     expect(availability([false, false, false], [true, true, true])).toBe("ready")
     expect(availability([false, true, false], [true, true, true])).toBe("stale")
     expect(availability([false, true, false], [true, false, true])).toBe("unavailable")
+  })
+
+  test("returns the first actual workspace error", () => {
+    const sessionError = new Error("session list failed")
+    expect(firstError(undefined, sessionError, new Error("MCP failed"))).toBe(sessionError)
+    expect(firstError(undefined, "", null)).toBeUndefined()
   })
 
   test("binds results to the latest generation and visible path", () => {

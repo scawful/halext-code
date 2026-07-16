@@ -1,6 +1,9 @@
-import { extname, resolve, relative, sep } from "node:path"
+import { randomUUID } from "node:crypto"
+import { readFileSync, unlinkSync } from "node:fs"
 import { open, readdir, realpath, stat } from "node:fs/promises"
 import { spawn, type ChildProcess } from "node:child_process"
+import { tmpdir } from "node:os"
+import { extname, join, resolve, relative, sep } from "node:path"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
@@ -221,69 +224,85 @@ function cleanupWindowsDescendants(proc: ChildProcess, pid: number): Promise<Des
   const existing = windowsCleanups.get(proc)
   if (existing) return existing
 
+  const resultPath = join(tmpdir(), `hcode-afs-bridge-cleanup-${process.pid}-${randomUUID()}.txt`)
+  const encodedResultPath = Buffer.from(resultPath).toString("base64")
   const script = `
 $ErrorActionPreference = 'Stop'
-$rootPid = [uint32]${pid}
-$all = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId)
-$ErrorActionPreference = 'SilentlyContinue'
-$pending = @($rootPid)
-$targets = @()
-while ($pending.Count -gt 0) {
-  $next = @()
-  foreach ($parentPid in $pending) {
-    $next += @($all | Where-Object { [uint32]$_.ParentProcessId -eq [uint32]$parentPid } | ForEach-Object { [uint32]$_.ProcessId })
+$resultPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedResultPath}'))
+try {
+  $rootPid = [uint32]${pid}
+  $targets = @(
+    Get-CimInstance -Query "SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = $rootPid" |
+      ForEach-Object { [uint32]$_.ProcessId }
+  )
+  $ErrorActionPreference = 'SilentlyContinue'
+  if ($targets.Count -eq 0) {
+    [IO.File]::WriteAllText($resultPath, 'clean', [Text.Encoding]::ASCII)
+    exit 0
   }
-  $next = @($next | Where-Object { $targets -notcontains $_ } | Sort-Object -Unique)
-  $targets += $next
-  $pending = $next
+  # Report discovery before taskkill waits for an inherited provider handle;
+  # the caller can fail closed immediately while this helper drains each tree.
+  [IO.File]::WriteAllText($resultPath, 'descendants', [Text.Encoding]::ASCII)
+  foreach ($targetPid in $targets) {
+    & taskkill.exe /PID $targetPid /T /F *> $null
+  }
+} catch {
+  try { [IO.File]::WriteAllText($resultPath, 'error', [Text.Encoding]::ASCII) } catch {}
 }
-if ($targets.Count -eq 0) {
-  [Console]::Out.Write('clean')
-  exit 0
-}
-foreach ($targetPid in $targets) {
-  & taskkill.exe /PID $targetPid /T /F *> $null
-}
-[Console]::Out.Write('descendants')
 exit 0
 `
 
   const task = new Promise<DescendantCleanup>((resolve) => {
-    let cleaner: ChildProcess
-    try {
-      cleaner = spawn(
-        "powershell.exe",
-        ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-        { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
-      )
-    } catch {
-      resolve("error")
-      return
-    }
+    let cleaner: ChildProcess | undefined
 
     let settled = false
+    let poll: ReturnType<typeof setInterval> | undefined
     const finish = (result: DescendantCleanup) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      cleaner.stdout?.destroy()
-      cleaner.unref()
+      if (poll) clearInterval(poll)
+      try {
+        unlinkSync(resultPath)
+      } catch {}
+      cleaner?.unref()
       resolve(result)
     }
     const timer = setTimeout(() => {
-      cleaner.kill("SIGKILL")
+      cleaner?.kill("SIGKILL")
       finish("error")
-    }, 5_000)
+    }, 7_000)
     timer.unref()
-    let output = ""
-    cleaner.stdout?.on("data", (chunk: Buffer) => {
-      // Consume the explicit result before Bun's delayed Windows process
-      // lifecycle events; provider handles can otherwise hold them open.
-      output += chunk.toString().replaceAll("\0", "")
-      if (output.includes("descendants")) finish("descendants")
-      else if (output.includes("clean")) finish("clean")
-    })
-    cleaner.once("error", () => finish("error"))
+    poll = setInterval(() => {
+      let result = ""
+      try {
+        result = readFileSync(resultPath, "ascii").trim()
+      } catch {}
+      if (result === "descendants") finish("descendants")
+      else if (result === "clean") finish("clean")
+      else if (result === "error") finish("error")
+    }, 25)
+    poll.unref()
+
+    const launch = (command: "pwsh.exe" | "powershell.exe") => {
+      if (settled) return
+      try {
+        cleaner = spawn(
+          command,
+          ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+          { stdio: "ignore", windowsHide: true },
+        )
+      } catch {
+        if (command === "pwsh.exe") launch("powershell.exe")
+        else finish("error")
+        return
+      }
+      cleaner.once("error", () => {
+        if (command === "pwsh.exe") launch("powershell.exe")
+        else finish("error")
+      })
+    }
+    launch("pwsh.exe")
   })
   const tracked = trackedCleanup(task)
   windowsCleanups.set(proc, tracked)
@@ -444,6 +463,12 @@ export async function runAfsJson<T>(
     proc.stdout.once("error", (error) => stop(new BridgeError(error.message, 502)))
     proc.stderr.once("error", (error) => stop(new BridgeError(error.message, 502)))
     proc.once("error", (error) => stop(new BridgeError(`Failed to start AFS command: ${error.message}`, 502)))
+    proc.once("exit", () => {
+      if (settled || process.platform !== "win32" || !proc.pid) return
+      // A descendant can keep inherited pipes open after the direct process
+      // exits, delaying `close`. Start discovery early so cleanup can drain it.
+      void cleanupWindowsDescendants(proc, proc.pid)
+    })
     proc.once("close", (code) => {
       if (settled) return
       const complete = async () => {
