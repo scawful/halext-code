@@ -28,10 +28,12 @@ try {
     [IO.File]::WriteAllText($resultPath, 'clean', [Text.Encoding]::ASCII)
     exit 0
   }
+  # Report discovery before taskkill waits for the inherited provider handle;
+  # the caller can fail closed immediately while this helper drains each tree.
+  [IO.File]::WriteAllText($resultPath, 'descendants', [Text.Encoding]::ASCII)
   foreach ($targetPid in $targets) {
     & taskkill.exe /PID $targetPid /T /F *> $null
   }
-  [IO.File]::WriteAllText($resultPath, 'descendants', [Text.Encoding]::ASCII)
 } catch {
   try { [IO.File]::WriteAllText($resultPath, 'error', [Text.Encoding]::ASCII) } catch {}
 }
