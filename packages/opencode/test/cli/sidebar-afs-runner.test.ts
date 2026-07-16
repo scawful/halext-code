@@ -29,6 +29,19 @@ async function waitForPid(path: string, timeout = 45_000) {
   } while (Date.now() < deadline)
 }
 
+async function raceWithDeadline<T>(pending: Promise<T>, timeout: number, deadline: symbol) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expired = new Promise<typeof deadline>((resolve) => {
+    timer = setTimeout(() => resolve(deadline), timeout)
+    timer.unref()
+  })
+  try {
+    return await Promise.race([pending, expired])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 describe("sidebar AFS runner", () => {
   test("captures successful output without a shell", async () => {
     const result = await run(["git", "--version"], {
@@ -95,7 +108,7 @@ describe("sidebar AFS runner", () => {
       expect(pid).toBeDefined()
 
       const deadline = Symbol("output cap deadline")
-      const result = await Promise.race([pending, Bun.sleep(5_000).then(() => deadline)])
+      const result = await raceWithDeadline(pending, 5_000, deadline)
       if (result === deadline) {
         abort.abort()
         await pending
@@ -156,7 +169,7 @@ describe("sidebar AFS runner", () => {
     expect(pid).toBeDefined()
 
     const deadline = Symbol("parent-close cleanup deadline")
-    const result = await Promise.race([pending, Bun.sleep(5_000).then(() => deadline)])
+    const result = await raceWithDeadline(pending, 5_000, deadline)
     if (result === deadline) {
       abort.abort()
       await pending
