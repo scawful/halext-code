@@ -12,6 +12,7 @@ const DEFAULT_PROJECT_PATH = process.env.HALEXT_BRIDGE_DEFAULT_PATH ?? resolve(i
 const DEFAULT_PORT = Number(process.env.HALEXT_BRIDGE_PORT ?? "4319")
 export const DEFAULT_BRIDGE_HOST = "127.0.0.1"
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024
+const children = new Set<ChildProcess>()
 
 const SummaryQuerySchema = z.object({
   path: z.string().optional(),
@@ -218,7 +219,9 @@ function windows(proc: ChildProcess, pid: number) {
 
   // A direct parent can exit while a descendant keeps an inherited pipe
   // open. taskkill cannot root a tree at that dead PID, so also discover
-  // surviving descendants from their recorded ParentProcessId values.
+  // surviving descendants from their recorded ParentProcessId values. This
+  // remains best-effort: a static snapshot cannot recover a deeper chain when
+  // an intermediate parent already exited.
   try {
     const script = `
 $ErrorActionPreference = 'SilentlyContinue'
@@ -273,11 +276,43 @@ export function terminate(proc: ChildProcess) {
   }
 }
 
-export async function runAfsJson<T>(args: string[], options?: { timeoutMs?: number; maxBytes?: number }) {
+function track(proc: ChildProcess) {
+  children.add(proc)
+  proc.once("close", () => children.delete(proc))
+}
+
+function closed(proc: ChildProcess, timeoutMs: number) {
+  if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer)
+      proc.off("close", done)
+      resolve()
+    }
+    const timer = setTimeout(done, timeoutMs)
+    timer.unref()
+    proc.once("close", done)
+  })
+}
+
+export async function shutdownAfsProcesses(timeoutMs = 2_000) {
+  const active = [...children]
+  active.forEach(terminate)
+  await Promise.all(active.map((proc) => closed(proc, timeoutMs)))
+}
+
+export async function runAfsJson<T>(
+  args: string[],
+  options?: { timeoutMs?: number; maxBytes?: number; signal?: AbortSignal },
+) {
   const timeoutMs = options?.timeoutMs ?? 60000
   const maxBytes = options?.maxBytes ?? MAX_OUTPUT_BYTES
 
   return new Promise<T>((resolve, reject) => {
+    if (options?.signal?.aborted) {
+      reject(new BridgeError("AFS command was cancelled", 499))
+      return
+    }
     let proc: ChildProcess
     try {
       const cmd = command([afsCli(), ...args])
@@ -287,6 +322,7 @@ export async function runAfsJson<T>(args: string[], options?: { timeoutMs?: numb
         windowsHide: true,
         env: process.env,
       })
+      track(proc)
     } catch (error) {
       reject(new BridgeError(error instanceof Error ? error.message : "Failed to start AFS command", 502))
       return
@@ -301,11 +337,13 @@ export async function runAfsJson<T>(args: string[], options?: { timeoutMs?: numb
     const stderr: Buffer[] = []
     let size = 0
     let settled = false
+    let cancel: (() => void) | undefined
 
     const finish = (action: () => void) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      if (cancel) options?.signal?.removeEventListener("abort", cancel)
       action()
     }
     const stop = (error: BridgeError) => {
@@ -325,6 +363,7 @@ export async function runAfsJson<T>(args: string[], options?: { timeoutMs?: numb
       chunks.push(chunk)
     }
     const timer = setTimeout(() => stop(new BridgeError(`AFS command timed out after ${timeoutMs}ms`, 504)), timeoutMs)
+    cancel = () => stop(new BridgeError("AFS command was cancelled", 499))
 
     proc.stdout.on("data", collect(stdout))
     proc.stderr.on("data", collect(stderr))
@@ -346,6 +385,8 @@ export async function runAfsJson<T>(args: string[], options?: { timeoutMs?: numb
         finish(() => reject(new BridgeError("AFS returned non-JSON output", 502, out || err)))
       }
     })
+    options?.signal?.addEventListener("abort", cancel, { once: true })
+    if (options?.signal?.aborted) cancel()
   })
 }
 
@@ -450,6 +491,7 @@ export const BridgeApp = new Hono()
     const summary = validate(
       await runAfsJson<unknown>(summaryArgs(projectPath, query.task_limit ?? 12, query.message_limit ?? 3), {
         timeoutMs: 10000,
+        signal: c.req.raw.signal,
       }),
       parseSummary,
     )
@@ -460,6 +502,7 @@ export const BridgeApp = new Hono()
     const pack = validate(
       await runAfsJson<unknown>(packArgs(query), {
         timeoutMs: query.timeout_ms ?? 60000,
+        signal: c.req.raw.signal,
       }),
       parsePack,
     )
@@ -477,20 +520,26 @@ export const BridgeApp = new Hono()
       String(query.limit ?? 20),
     ]
     if (query.status) args.push("--status", query.status)
-    const missions = validate(await runAfsJson<unknown>(args, { timeoutMs: 10000 }), parseMissions)
+    const missions = validate(
+      await runAfsJson<unknown>(args, { timeoutMs: 10000, signal: c.req.raw.signal }),
+      parseMissions,
+    )
     return c.json(missions)
   })
   .get("/api/approvals", async (c) => {
     const query = ApprovalQuerySchema.parse(c.req.query())
     const approvals = validate(
-      await runAfsJson<unknown>(approvalArgs(query.status), { timeoutMs: 10000 }),
+      await runAfsJson<unknown>(approvalArgs(query.status), { timeoutMs: 10000, signal: c.req.raw.signal }),
       parseApprovals,
     )
     return c.json(query.status ? approvals.filter((item) => item.status === query.status) : approvals)
   })
   .get("/api/health", async (c) => {
     const health = validate(
-      await runAfsJson<unknown>(["health", "status", "--json"], { timeoutMs: 20000 }),
+      await runAfsJson<unknown>(["health", "status", "--json"], {
+        timeoutMs: 20000,
+        signal: c.req.raw.signal,
+      }),
       parseHealth,
     )
     return c.json(health)
@@ -533,11 +582,20 @@ export const BridgeApp = new Hono()
   })
 
 if (import.meta.main) {
-  Bun.serve({
+  const server = Bun.serve({
     hostname: DEFAULT_BRIDGE_HOST,
     port: DEFAULT_PORT,
     idleTimeout: 30,
     fetch: BridgeApp.fetch,
   })
+  let closing = false
+  const shutdown = async () => {
+    if (closing) return
+    closing = true
+    await Promise.allSettled([server.stop(true), shutdownAfsProcesses()])
+    process.exit(0)
+  }
+  process.once("SIGINT", () => void shutdown())
+  process.once("SIGTERM", () => void shutdown())
   console.log(`halext-bridge listening on http://${DEFAULT_BRIDGE_HOST}:${DEFAULT_PORT}`)
 }

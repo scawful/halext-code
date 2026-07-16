@@ -432,6 +432,8 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
   let attentionAbort: AbortController | undefined
   let packRefresh: AttentionRefresh = { generation: 0, path: "" }
   let packAbort: AbortController | undefined
+  let healthGeneration = 0
+  let healthAbort: AbortController | undefined
   let seen = [false, false, false]
   let attentionError = ""
   let healthError = ""
@@ -462,7 +464,6 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       directory: props.directory,
     }),
   )
-  const bridgeClient = createMemo(() => createHalextBridgeClient({ baseUrl: props.bridgeUrl, signal: abort.signal }))
   const selectedSession = createMemo(() => sessions().find((session) => session.id === selectedSessionID()))
   const selectedSessionIndex = createMemo(() => sessions().findIndex((session) => session.id === selectedSessionID()))
   const activePath = createMemo(() => props.directory || selectedSession()?.directory || projects()[0]?.worktree || "")
@@ -801,9 +802,18 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
   }
 
   async function checkAfsHealth() {
+    const generation = ++healthGeneration
+    healthAbort?.abort()
+    const next = new AbortController()
+    healthAbort = next
+    const scopedBridge = createHalextBridgeClient({
+      baseUrl: props.bridgeUrl,
+      signal: AbortSignal.any([abort.signal, next.signal]),
+    })
     setStatusText("Running AFS health check...")
     try {
-      const health = await bridgeClient().getHealth()
+      const health = await scopedBridge.getHealth()
+      if (generation !== healthGeneration) return
       const worst = health.scores.filter((score) => score.status === "critical").slice(0, 2)
       const detail = worst.length > 0 ? ` Critical: ${worst.map((score) => score.metric).join(", ")}.` : ""
       const state = refreshError(healthError, errorText(), "", attentionError)
@@ -811,9 +821,12 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       if (state.visible !== errorText()) setErrorText(state.visible)
       setStatusText(`AFS health ${health.overall_status} (${Math.round(health.overall_score * 100)}%).${detail}`)
     } catch (error) {
+      if (generation !== healthGeneration) return
       const state = refreshError(healthError, errorText(), explainError(error), attentionError)
       healthError = state.owned
       if (state.visible !== errorText()) setErrorText(state.visible)
+    } finally {
+      if (healthAbort === next) healthAbort = undefined
     }
   }
 
@@ -898,10 +911,12 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
   })
   onCleanup(() => {
     workspaceGeneration += 1
+    healthGeneration += 1
     attentionRefresh = beginRefresh(attentionRefresh, "").ticket
     packRefresh = beginRefresh(packRefresh, "").ticket
     attentionAbort?.abort()
     packAbort?.abort()
+    healthAbort?.abort()
     abort.abort()
   })
 
