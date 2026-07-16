@@ -18,12 +18,15 @@ test("smoke model selection updates prompt footer", async ({ page, gotoSession }
   await expect(dialog).toBeVisible()
 
   const input = dialog.getByRole("textbox").first()
+  const items = dialog.locator('[data-slot="list-item"][data-key]')
+  await expect(items.first()).toBeVisible()
 
-  const selected = dialog.locator('[data-slot="list-item"][data-selected="true"]').first()
-  await expect(selected).toBeVisible()
-
-  const other = dialog.locator('[data-slot="list-item"]:not([data-selected="true"])').first()
-  const target = (await other.count()) > 0 ? other : selected
+  // The configured model may not be part of the unpaid dialog's current
+  // free-model catalog, in which case the list legitimately has no selected
+  // row. Prefer a different model when one exists and otherwise use the
+  // first available row.
+  const other = dialog.locator('[data-slot="list-item"][data-key]:not([data-selected="true"])').first()
+  const target = (await other.count()) > 0 ? other : items.first()
 
   const key = await target.getAttribute("data-key")
   if (!key) throw new Error("Failed to resolve model key from list item")
