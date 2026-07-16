@@ -41,7 +41,7 @@ ${source}
 ${options?.stayAlive ? "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)" : "process.exit(0)"}
 `
     await writeFile(script, preload, "utf8")
-    process.env.NODE_OPTIONS = `--require "${script}"`
+    process.env.NODE_OPTIONS = `--require "${script.replaceAll("\\", "/")}"`
     process.env.AFS_BIN = node
     process.env.AFS_CLI = node
   } else {
