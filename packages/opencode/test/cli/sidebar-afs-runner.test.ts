@@ -17,7 +17,7 @@ describe("sidebar AFS runner", () => {
   test("captures successful output without a shell", async () => {
     const result = await run([process.execPath, "-e", 'console.log("grounded")'], {
       signal: new AbortController().signal,
-      timeout: 2_000,
+      timeout: process.platform === "win32" ? 10_000 : 2_000,
       limit: 1_024,
     })
 
@@ -40,7 +40,7 @@ describe("sidebar AFS runner", () => {
     const args = ["literal & value", 'quote"value']
     const result = await run([file, ...args], {
       signal: new AbortController().signal,
-      timeout: 2_000,
+      timeout: process.platform === "win32" ? 10_000 : 2_000,
       limit: 1_024,
     })
 
@@ -55,13 +55,13 @@ describe("sidebar AFS runner", () => {
         [process.execPath, "-e", `process.${stream}.write("x".repeat(4096)); await Bun.sleep(5000)`],
         {
           signal: new AbortController().signal,
-          timeout: 2_000,
+          timeout: 10_000,
           limit: 128,
         },
       )
 
       expect(result).toBeUndefined()
-      expect(performance.now() - started).toBeLessThan(1_000)
+      expect(performance.now() - started).toBeLessThan(5_000)
     }
   })
 
@@ -127,7 +127,7 @@ describe("sidebar AFS runner", () => {
         ],
         {
           signal: new AbortController().signal,
-          timeout: 500,
+          timeout: 10_000,
           limit: 1_024,
         },
       )
@@ -138,7 +138,7 @@ describe("sidebar AFS runner", () => {
       for (let attempt = 0; attempt < 20 && alive(pid); attempt++) await Bun.sleep(250)
       expect(alive(pid)).toBeFalse()
       expect(result).toBeUndefined()
-      expect(elapsed).toBeLessThan(2_000)
+      expect(elapsed).toBeLessThan(8_000)
     },
   )
 

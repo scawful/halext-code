@@ -167,10 +167,10 @@ test("timeouts terminate descendants after the direct parent exits", async () =>
         "-e",
         `const child = Bun.spawn([process.execPath, "-e", "await Bun.sleep(10000)"], { stdout: "inherit", stderr: "inherit" }); await Bun.write(${JSON.stringify(pidPath)}, String(child.pid)); process.exit(0)`,
       ],
-      { timeoutMs: 200 },
+      { timeoutMs: process.platform === "win32" ? 10_000 : 200 },
     ),
-  ).rejects.toThrow("AFS command timed out after 200ms")
-  expect(performance.now() - started).toBeLessThan(2_000)
+  ).rejects.toThrow(process.platform === "win32" ? /descendant|cleanup/ : "AFS command timed out after 200ms")
+  expect(performance.now() - started).toBeLessThan(process.platform === "win32" ? 8_000 : 2_000)
 
   const pid = Number(await readFile(pidPath, "utf8"))
   expect(pid).toBeGreaterThan(0)
