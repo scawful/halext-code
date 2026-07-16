@@ -7,6 +7,7 @@ import { iife } from "@/util/iife"
 import { GlobalBus } from "@/bus/global"
 import { Filesystem } from "@/util/filesystem"
 import { InstanceState } from "@/util/instance-state"
+import path from "path"
 
 interface Context {
   directory: string
@@ -97,9 +98,9 @@ export const Instance = {
    */
   containsPath(filepath: string) {
     if (Filesystem.contains(Instance.directory, filepath)) return true
-    // Non-git projects set worktree to "/" which would match ANY absolute path.
-    // Skip worktree check in this case to preserve external_directory permissions.
-    if (Instance.worktree === "/") return false
+    // Non-git projects use the platform filesystem root as their worktree, which
+    // would match every path on that volume. Keep the directory boundary instead.
+    if (Instance.worktree === path.parse(Instance.worktree).root) return false
     return Filesystem.contains(Instance.worktree, filepath)
   },
   state<S>(init: () => S, dispose?: (state: Awaited<S>) => Promise<void>): () => S {

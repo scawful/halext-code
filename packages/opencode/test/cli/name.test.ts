@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
+import path from "path"
 import { App } from "../../src/cli/name"
 
 const argv = [...process.argv]
@@ -18,7 +19,7 @@ test("prefers explicit cli name from env", () => {
   expect(App.initials()).toBe("HC")
   expect(App.mdnsDomain()).toBe("hcode.local")
   expect(App.cmd("models")).toBe("hcode models")
-  expect(App.launch("/tmp/repo")).toBe("/tmp/repo/scripts/hcode")
+  expect(App.launch("/tmp/repo")).toBe(path.join("/tmp/repo", "scripts", "hcode"))
 })
 
 test("falls back to argv basename when it looks like a real launcher", () => {
