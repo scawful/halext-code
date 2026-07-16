@@ -19,7 +19,9 @@ describe("sidebar AFS runner", () => {
   test("captures successful output without a shell", async () => {
     const result = await run([process.execPath, "-e", 'console.log("grounded")'], {
       signal: new AbortController().signal,
-      timeout: process.platform === "win32" ? 10_000 : 2_000,
+      // This test exercises output capture, not the timeout boundary. Give a
+      // busy CI runner enough time to start a second Bun process.
+      timeout: 10_000,
       limit: 1_024,
     })
 
@@ -42,7 +44,7 @@ describe("sidebar AFS runner", () => {
     const args = ["literal & value", 'quote"value']
     const result = await run([file, ...args], {
       signal: new AbortController().signal,
-      timeout: process.platform === "win32" ? 10_000 : 2_000,
+      timeout: 10_000,
       limit: 1_024,
     })
 
