@@ -17,35 +17,29 @@ function cleanupWindowsDescendants(pid: number): Promise<DescendantCleanup> {
   const script = `
 $ErrorActionPreference = 'Stop'
 $resultPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedResultPath}'))
-$rootPid = [uint32]${pid}
-$targets = @(
-  Get-CimInstance -Query "SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = $rootPid" |
-    ForEach-Object { [uint32]$_.ProcessId }
-)
-$ErrorActionPreference = 'SilentlyContinue'
-if ($targets.Count -eq 0) {
-  Set-Content -LiteralPath $resultPath -Value 'clean' -NoNewline -Encoding Ascii
-  exit 0
+try {
+  $rootPid = [uint32]${pid}
+  $targets = @(
+    Get-CimInstance -Query "SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = $rootPid" |
+      ForEach-Object { [uint32]$_.ProcessId }
+  )
+  $ErrorActionPreference = 'SilentlyContinue'
+  if ($targets.Count -eq 0) {
+    [IO.File]::WriteAllText($resultPath, 'clean', [Text.Encoding]::ASCII)
+    exit 0
+  }
+  foreach ($targetPid in $targets) {
+    & taskkill.exe /PID $targetPid /T /F *> $null
+  }
+  [IO.File]::WriteAllText($resultPath, 'descendants', [Text.Encoding]::ASCII)
+} catch {
+  try { [IO.File]::WriteAllText($resultPath, 'error', [Text.Encoding]::ASCII) } catch {}
 }
-foreach ($targetPid in $targets) {
-  & taskkill.exe /PID $targetPid /T /F *> $null
-}
-Set-Content -LiteralPath $resultPath -Value 'descendants' -NoNewline -Encoding Ascii
 exit 0
 `
 
   return new Promise((resolve) => {
-    let cleaner: ChildProcess
-    try {
-      cleaner = spawn(
-        "powershell.exe",
-        ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-        { stdio: "ignore", windowsHide: true },
-      )
-    } catch {
-      resolve("error")
-      return
-    }
+    let cleaner: ChildProcess | undefined
 
     let settled = false
     let poll: ReturnType<typeof setInterval> | undefined
@@ -57,11 +51,11 @@ exit 0
       try {
         unlinkSync(resultPath)
       } catch {}
-      cleaner.unref()
+      cleaner?.unref()
       resolve(result)
     }
     const timer = setTimeout(() => {
-      cleaner.kill("SIGKILL")
+      cleaner?.kill("SIGKILL")
       finish("error")
     }, 7_000)
     timer.unref()
@@ -72,9 +66,31 @@ exit 0
       } catch {}
       if (result === "descendants") finish("descendants")
       else if (result === "clean") finish("clean")
+      else if (result === "error") finish("error")
     }, 25)
     poll.unref()
-    cleaner.once("error", () => finish("error"))
+
+    const launch = (command: "pwsh.exe" | "powershell.exe") => {
+      try {
+        cleaner = spawn(
+          command,
+          ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+          { stdio: "ignore", windowsHide: true },
+        )
+      } catch {
+        if (command === "pwsh.exe") launch("powershell.exe")
+        else finish("error")
+        return
+      }
+      cleaner.once("error", () => {
+        if (command === "pwsh.exe") launch("powershell.exe")
+        else finish("error")
+      })
+    }
+    // PowerShell 7 avoids the slow legacy CIM startup seen on loaded hosts.
+    // Retain the inbox shell as a compatibility
+    // fallback for Windows machines without pwsh.
+    launch("pwsh.exe")
   })
 }
 
