@@ -17,16 +17,14 @@ function alive(pid: number) {
 
 describe("sidebar AFS runner", () => {
   test("captures successful output without a shell", async () => {
-    const result = await run([process.execPath, "-e", 'console.log("grounded")'], {
+    const result = await run(["git", "--version"], {
       signal: new AbortController().signal,
-      // This test exercises output capture, not the timeout boundary. Give a
-      // busy CI runner enough time to start a second Bun process.
       timeout: 10_000,
       limit: 1_024,
     })
 
     expect(result?.code).toBe(0)
-    expect(result?.stdout.toString().trim()).toBe("grounded")
+    expect(result?.stdout.toString()).toStartWith("git version ")
   })
 
   test("passes arguments without shell interpretation", async () => {
