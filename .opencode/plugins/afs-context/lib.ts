@@ -71,6 +71,7 @@ exit 0
     poll.unref()
 
     const launch = (command: "pwsh.exe" | "powershell.exe") => {
+      if (settled) return
       try {
         cleaner = spawn(
           command,
