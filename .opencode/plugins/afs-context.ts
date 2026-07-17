@@ -84,8 +84,11 @@ const SYSTEM_GUIDANCE = [
   "If an AFS tool is slow or times out, report that plainly and fall back to lighter-weight AFS context instead of retrying aggressively.",
 ]
 
-export const AFSContextPlugin: Plugin = async ({ directory, worktree }) => {
-  const base = worktree === "/" ? directory : worktree
+export const AFSContextPlugin: Plugin = async ({ directory }) => {
+  // AFS resolves the most-specific registered project for the launch path.
+  // Using the git worktree here would collapse nested monorepo projects into
+  // their broader repository scope and disagree with sidebar polling.
+  const base = directory
   const bin = process.env.AFS_BIN?.trim() || process.env.AFS_CLI?.trim() || "afs"
 
   // Resolve the authoritative context through AFS itself. Invalid v2 projects

@@ -8,6 +8,7 @@ import { tmpdir } from "../fixture/fixture"
 const env = {
   bin: process.env.AFS_BIN,
   cli: process.env.AFS_CLI,
+  log: process.env.HCODE_AFS_TEST_LOG,
   opts: process.env.NODE_OPTIONS,
 }
 const node = process.platform === "win32" ? "node.exe" : "node"
@@ -20,6 +21,9 @@ beforeEach(async () => {
   await Bun.write(
     bin,
     `
+if (process.env.HCODE_AFS_TEST_LOG) {
+  require("fs").appendFileSync(process.env.HCODE_AFS_TEST_LOG, JSON.stringify(process.argv.slice(1)) + "\\n")
+}
 if (require("path").basename(process.argv[1] ?? "") === "projects") {
   require("fs").writeSync(1, JSON.stringify({
     context_root: ${JSON.stringify(join(parse(process.cwd()).root, "tmp", "repo", ".context"))},
@@ -45,6 +49,8 @@ afterEach(async () => {
   else process.env.AFS_BIN = env.bin
   if (env.cli === undefined) delete process.env.AFS_CLI
   else process.env.AFS_CLI = env.cli
+  if (env.log === undefined) delete process.env.HCODE_AFS_TEST_LOG
+  else process.env.HCODE_AFS_TEST_LOG = env.log
   if (env.opts === undefined) delete process.env.NODE_OPTIONS
   else process.env.NODE_OPTIONS = env.opts
   if (fixture) await rm(fixture, { recursive: true, force: true })
@@ -71,6 +77,25 @@ describe("plugin.afs-context", () => {
     const out = { args: {} as Record<string, unknown> }
     await plugin["tool.execute.before"]?.({ tool: "afs_local_context_status" } as any, out as any)
     expect(out.args.context_path).toBe(ctx)
+  })
+
+  test("keeps nested project resolution aligned with the launch directory", async () => {
+    const nested = join(root, "packages", "nested")
+    const log = join(fixture!, "calls.jsonl")
+    process.env.HCODE_AFS_TEST_LOG = log
+    const plugin = await AFSContextPlugin({ directory: nested, worktree: root } as any)
+    const out = { args: {} as Record<string, unknown> }
+
+    await plugin["tool.execute.before"]?.({ tool: "afs_local_context_status" } as any, out as any)
+
+    expect(out.args.project_path).toBe(nested)
+    const calls = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+    expect(calls).toHaveLength(1)
+    expect(parse(calls[0]?.[0] ?? "").base).toBe("projects")
+    expect(calls[0]?.slice(1)).toEqual(["current", "--path", nested, "--json"])
   })
 
   test("normalizes common repo-local context file paths", async () => {
