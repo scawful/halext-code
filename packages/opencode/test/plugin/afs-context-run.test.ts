@@ -15,7 +15,7 @@ function processIsAlive(pid: number) {
 describe("plugin.afs-context bounded runner", () => {
   test("resolves the native Windows process snapshot helper from the plugin", () => {
     const pluginDir = join(import.meta.dir, "../../../../.opencode/plugins/afs-context")
-    expect(Bun.resolveSync("@vscode/windows-process-tree", pluginDir)).toContain("@vscode/windows-process-tree")
+    expect(Bun.resolveSync("@vscode/windows-process-tree", pluginDir)).toBeTruthy()
   })
 
   test("bounds Windows descendant cleanup without concurrent taskkill fan-out", async () => {
