@@ -8,29 +8,36 @@ import { tmpdir } from "../fixture/fixture"
 const env = {
   bin: process.env.AFS_BIN,
   cli: process.env.AFS_CLI,
+  opts: process.env.NODE_OPTIONS,
 }
+const node = process.platform === "win32" ? "node.exe" : "node"
 
 let fixture: string | undefined
 
 beforeEach(async () => {
   fixture = await mkdtemp(join(osTmpdir(), "hcode-afs-plugin-"))
-  const bin = join(fixture, "afs")
+  const bin = join(fixture, "afs.cjs")
   await Bun.write(
     bin,
-    `#!/usr/bin/env bun
-if (process.argv.includes("projects")) {
-  console.log(JSON.stringify({
+    `
+if (require("path").basename(process.argv[1] ?? "") === "projects") {
+  require("fs").writeSync(1, JSON.stringify({
     context_root: ${JSON.stringify(join(parse(process.cwd()).root, "tmp", "repo", ".context"))},
     layout_version: 1,
     registered: false,
     scope_id: "common",
     project: null,
-  }))
+  }) + "\\n")
 }
+process.exit(0)
 `,
   )
-  await chmod(bin, 0o755)
-  process.env.AFS_BIN = bin
+  // The bounded runner intentionally rejects batch files, so use a native
+  // executable with a preload hook instead of a platform-specific launcher.
+  process.env.AFS_BIN = node
+  process.env.NODE_OPTIONS = [env.opts, `--require=${JSON.stringify(bin.replaceAll("\\", "/"))}`]
+    .filter(Boolean)
+    .join(" ")
 })
 
 afterEach(async () => {
@@ -38,6 +45,8 @@ afterEach(async () => {
   else process.env.AFS_BIN = env.bin
   if (env.cli === undefined) delete process.env.AFS_CLI
   else process.env.AFS_CLI = env.cli
+  if (env.opts === undefined) delete process.env.NODE_OPTIONS
+  else process.env.NODE_OPTIONS = env.opts
   if (fixture) await rm(fixture, { recursive: true, force: true })
   fixture = undefined
 })
