@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test"
-import { chmod, mkdir, readFile } from "fs/promises"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { chmod, mkdir, mkdtemp, readFile, rm } from "fs/promises"
+import { tmpdir as osTmpdir } from "os"
 import { join, parse } from "path"
 import { AFSContextPlugin } from "../../../../.opencode/plugins/afs-context"
 import { tmpdir } from "../fixture/fixture"
@@ -9,11 +10,36 @@ const env = {
   cli: process.env.AFS_CLI,
 }
 
-afterEach(() => {
+let fixture: string | undefined
+
+beforeEach(async () => {
+  fixture = await mkdtemp(join(osTmpdir(), "hcode-afs-plugin-"))
+  const bin = join(fixture, "afs")
+  await Bun.write(
+    bin,
+    `#!/usr/bin/env bun
+if (process.argv.includes("projects")) {
+  console.log(JSON.stringify({
+    context_root: ${JSON.stringify(join(parse(process.cwd()).root, "tmp", "repo", ".context"))},
+    layout_version: 1,
+    registered: false,
+    scope_id: "common",
+    project: null,
+  }))
+}
+`,
+  )
+  await chmod(bin, 0o755)
+  process.env.AFS_BIN = bin
+})
+
+afterEach(async () => {
   if (env.bin === undefined) delete process.env.AFS_BIN
   else process.env.AFS_BIN = env.bin
   if (env.cli === undefined) delete process.env.AFS_CLI
   else process.env.AFS_CLI = env.cli
+  if (fixture) await rm(fixture, { recursive: true, force: true })
+  fixture = undefined
 })
 
 describe("plugin.afs-context", () => {
@@ -21,13 +47,13 @@ describe("plugin.afs-context", () => {
   const dir = join(root, "packages", "opencode")
   const ctx = join(root, ".context")
 
-  test("adds repo-local AFS guidance", async () => {
+  test("adds CLI-resolved AFS guidance", async () => {
     const plugin = await AFSContextPlugin({ directory: dir, worktree: root } as any)
     const out = { system: [] as string[] }
-    await plugin["experimental.chat.system.transform"]?.({} as any, out as any)
+    await plugin["experimental.chat.system.transform"]?.({ sessionID: "session-guidance" } as any, out as any)
     expect(out.system).toHaveLength(1)
-    expect(out.system[0]).toContain("/afs-brief")
-    expect(out.system[0]).toContain("/afs-handoff-create")
+    expect(out.system[0]).toContain("plain AFS CLI")
+    expect(out.system[0]).toContain("start, search, files, notes, handoff, messages")
     expect(out.system[0]).toContain(ctx)
   })
 
@@ -77,6 +103,45 @@ describe("plugin.afs-context", () => {
     expect(out.args.context_path).toBe(ctx)
   })
 
+  test.skipIf(process.platform === "win32")("injects the registered v2 scope into canonical slim tools", async () => {
+    await using tmp = await tmpdir()
+    const context = join(tmp.path, "central-context")
+    const bin = join(tmp.path, "afs")
+    await mkdir(context)
+    await Bun.write(
+      bin,
+      `#!/usr/bin/env bun
+console.log(JSON.stringify({
+  context_root: ${JSON.stringify(context)},
+  layout_version: 2,
+  registered: true,
+  scope_id: "project:prj_test",
+  project: { project_id: "prj_test" },
+}))
+`,
+    )
+    await chmod(bin, 0o755)
+    process.env.AFS_BIN = bin
+
+    const plugin = await AFSContextPlugin({ directory: tmp.path, worktree: tmp.path } as any)
+    for (const tool of [
+      "afs_local_context_search",
+      "afs_local_messages_send",
+      "afs_local_messages_read",
+      "afs_local_note_create",
+      "afs_local_note_read",
+      "afs_local_note_list",
+      "afs_local_handoff_create",
+      "afs_local_handoff_read",
+      "afs_local_handoff_list",
+    ]) {
+      const out = { args: {} as Record<string, unknown> }
+      await plugin["tool.execute.before"]?.({ tool } as any, out as any)
+      expect(out.args.context_path).toBe(context)
+      expect(out.args.project_path).toBe(tmp.path)
+    }
+  })
+
   test("annotates status, refresh, and pack output", async () => {
     const plugin = await AFSContextPlugin({ directory: dir, worktree: root } as any)
     const status = { output: "status" }
@@ -86,15 +151,15 @@ describe("plugin.afs-context", () => {
     await plugin["tool.execute.after"]?.({ tool: "afs_local_context_index_rebuild" } as any, refresh as any)
     await plugin["tool.execute.after"]?.({ tool: "afs_local_session_pack" } as any, pack as any)
     expect(status.output).toContain("Repo note:")
-    expect(refresh.output).toContain("repo-local .context index")
+    expect(refresh.output).toContain("AFS-resolved context index")
     expect(pack.output).toContain("artifact")
   })
 
-  test("falls back to directory for the non-project worktree sentinel", async () => {
+  test("resolves AFS through the CLI for the non-project worktree sentinel", async () => {
     const plugin = await AFSContextPlugin({ directory: dir, worktree: "/" } as any)
     const out = { args: {} as Record<string, unknown> }
     await plugin["tool.execute.before"]?.({ tool: "afs_local_context_status" } as any, out as any)
-    expect(out.args.context_path).toBe(join(dir, ".context"))
+    expect(out.args.context_path).toBe(ctx)
   })
 
   test.skipIf(process.platform === "win32")(
@@ -107,7 +172,7 @@ describe("plugin.afs-context", () => {
       await mkdir(context)
       await Bun.write(
         bin,
-        `#!/usr/bin/env bun\nimport { appendFileSync } from "fs"\nappendFileSync(${JSON.stringify(count)}, "1\\n")\nconsole.log("grounding:" + process.argv.at(-1))\n`,
+        `#!/usr/bin/env bun\nimport { appendFileSync } from "fs"\nif (process.argv.includes("projects")) {\n  console.log(JSON.stringify({ context_root: ${JSON.stringify(context)}, layout_version: 1, registered: false, scope_id: "common", project: null }))\n} else {\n  appendFileSync(${JSON.stringify(count)}, "1\\n")\n  console.log("grounding:" + process.argv.at(-1))\n}\n`,
       )
       await chmod(bin, 0o755)
       process.env.AFS_BIN = bin
@@ -123,12 +188,13 @@ describe("plugin.afs-context", () => {
       delete process.env.AFS_BIN
       process.env.AFS_CLI = bin
       const fallback = { system: [] as string[] }
-      await plugin["experimental.chat.system.transform"]?.({ sessionID: "session-c" } as any, fallback as any)
+      const fallbackPlugin = await AFSContextPlugin({ directory: tmp.path, worktree: tmp.path } as any)
+      await fallbackPlugin["experimental.chat.system.transform"]?.({ sessionID: "session-c" } as any, fallback as any)
       expect(fallback.system.at(-1)).toBe(`grounding:${tmp.path}`)
 
       const out = { system: [] as string[] }
       await plugin["experimental.chat.system.transform"]?.({} as any, out as any)
-      expect(out.system).toHaveLength(1)
+      expect(out.system).toHaveLength(0)
       expect((await readFile(count, "utf8")).trim().split("\n")).toHaveLength(3)
     },
   )
@@ -141,7 +207,7 @@ describe("plugin.afs-context", () => {
     await mkdir(context)
     await Bun.write(
       bin,
-      `#!/usr/bin/env bun\nimport { appendFileSync } from "fs"\nappendFileSync(${JSON.stringify(count)}, "1\\n")\nawait Bun.sleep(100)\n`,
+      `#!/usr/bin/env bun\nimport { appendFileSync } from "fs"\nif (process.argv.includes("projects")) {\n  console.log(JSON.stringify({ context_root: ${JSON.stringify(context)}, layout_version: 1, registered: false, scope_id: "common", project: null }))\n} else {\n  appendFileSync(${JSON.stringify(count)}, "1\\n")\n  await Bun.sleep(100)\n}\n`,
     )
     await chmod(bin, 0o755)
     process.env.AFS_BIN = bin
