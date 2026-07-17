@@ -10,6 +10,7 @@ const env = {
   cli: process.env.AFS_CLI,
   log: process.env.HCODE_AFS_TEST_LOG,
   opts: process.env.NODE_OPTIONS,
+  resolve: process.env.HCODE_AFS_TEST_RESOLVE,
 }
 const node = process.platform === "win32" ? "node.exe" : "node"
 
@@ -25,6 +26,21 @@ if (process.env.HCODE_AFS_TEST_LOG) {
   require("fs").appendFileSync(process.env.HCODE_AFS_TEST_LOG, JSON.stringify(process.argv.slice(1)) + "\\n")
 }
 if (require("path").basename(process.argv[1] ?? "") === "projects") {
+  if (process.env.HCODE_AFS_TEST_RESOLVE === "empty") process.exit(0)
+  if (process.env.HCODE_AFS_TEST_RESOLVE === "malformed") {
+    require("fs").writeSync(1, "{not-json\\n")
+    process.exit(0)
+  }
+  if (process.env.HCODE_AFS_TEST_RESOLVE === "unregistered") {
+    require("fs").writeSync(1, JSON.stringify({
+      context_root: ${JSON.stringify(join(parse(process.cwd()).root, "tmp", "repo", ".context"))},
+      layout_version: 2,
+      registered: false,
+      scope_id: "common",
+      project: null,
+    }) + "\\n")
+    process.exit(0)
+  }
   require("fs").writeSync(1, JSON.stringify({
     context_root: ${JSON.stringify(join(parse(process.cwd()).root, "tmp", "repo", ".context"))},
     layout_version: 1,
@@ -53,6 +69,8 @@ afterEach(async () => {
   else process.env.HCODE_AFS_TEST_LOG = env.log
   if (env.opts === undefined) delete process.env.NODE_OPTIONS
   else process.env.NODE_OPTIONS = env.opts
+  if (env.resolve === undefined) delete process.env.HCODE_AFS_TEST_RESOLVE
+  else process.env.HCODE_AFS_TEST_RESOLVE = env.resolve
   if (fixture) await rm(fixture, { recursive: true, force: true })
   fixture = undefined
 })
@@ -96,6 +114,29 @@ describe("plugin.afs-context", () => {
     expect(calls).toHaveLength(1)
     expect(parse(calls[0]?.[0] ?? "").base).toBe("projects")
     expect(calls[0]?.slice(1)).toEqual(["current", "--path", nested, "--json"])
+  })
+
+  for (const mode of ["empty", "malformed", "unregistered"] as const) {
+    test(`fails closed when project resolution is ${mode}`, async () => {
+      process.env.HCODE_AFS_TEST_RESOLVE = mode
+      const plugin = await AFSContextPlugin({ directory: dir, worktree: root } as any)
+      const out = { args: { path: "scratchpad/note.md" } as Record<string, unknown> }
+
+      await expect(
+        plugin["tool.execute.before"]?.({ tool: "afs_local_context_write" } as any, out as any),
+      ).rejects.toThrow("AFS project scope is unavailable")
+      expect(out.args).toEqual({ path: "scratchpad/note.md" })
+    })
+  }
+
+  test("leaves non-AFS tools unchanged when project resolution is unavailable", async () => {
+    process.env.HCODE_AFS_TEST_RESOLVE = "malformed"
+    const plugin = await AFSContextPlugin({ directory: dir, worktree: root } as any)
+    const out = { args: { path: "README.md" } as Record<string, unknown> }
+
+    await plugin["tool.execute.before"]?.({ tool: "read" } as any, out as any)
+
+    expect(out.args).toEqual({ path: "README.md" })
   })
 
   test("normalizes common repo-local context file paths", async () => {

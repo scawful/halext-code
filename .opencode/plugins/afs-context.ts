@@ -180,7 +180,11 @@ export const AFSContextPlugin: Plugin = async ({ directory }) => {
     "tool.execute.before": async (input, output) => {
       if (!TOOLS.has(input.tool) && !FILES.has(input.tool)) return
       const current = await locate()
-      if (!current) return
+      if (!current) {
+        throw new Error(
+          "AFS project scope is unavailable; run `afs projects current --path . --json` and register or repair the project before retrying.",
+        )
+      }
       const args = output.args as Record<string, unknown>
       args.project_path = base
       args.context_path = current.root
