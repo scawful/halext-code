@@ -689,7 +689,6 @@ export const BridgeApp = new Hono()
   .get("/api/missions", async (c) => {
     const query = MissionQuerySchema.parse(c.req.query())
     const args = [
-      "mission",
       "list",
       "--json",
       "--path",
@@ -698,8 +697,12 @@ export const BridgeApp = new Hono()
       String(query.limit ?? 20),
     ]
     if (query.status) args.push("--status", query.status)
+    const options = { timeoutMs: 10000, signal: c.req.raw.signal }
     const missions = validate(
-      await runAfsJson<unknown>(args, { timeoutMs: 10000, signal: c.req.raw.signal }),
+      await runAfsJson<unknown>(["missions", ...args], options).catch((error) => {
+        if (error instanceof BridgeError && error.status !== 502) throw error
+        return runAfsJson<unknown>(["mission", ...args], options)
+      }),
       parseMissions,
     )
     return c.json(missions)

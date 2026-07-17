@@ -56,8 +56,9 @@ scratchpad, handoffs, jobs, knowledge lookup, or AFS migration choices.
   rebuilding from scratch.
 - Treat a built-but-stale index as a freshness advisory for search-heavy work,
   not a default failure state.
-- The project plugin `.opencode/plugins/afs-context.ts` injects only the
-  central `context_path` authorized by `afs projects current`.
+- The project plugin `.opencode/plugins/afs-context.ts` injects the launch
+  `project_path` and central `context_path` authorized by
+  `afs projects current`.
 - Trust an absolute v1 compatibility root explicitly returned by AFS. For v2,
   if project discovery fails or reports the project unregistered, do not guess
   a context path; register or repair the project through AFS first.

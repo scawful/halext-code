@@ -127,6 +127,21 @@ describe("AFS response validation", () => {
   })
 })
 
+describe("mission routing", () => {
+  test("prefers the plural command and falls back to the compatibility alias", async () => {
+    await fakeCli(`
+const command = process.argv.slice(2)
+if (command[0] === "missions") process.exit(2)
+if (command[0] !== "mission") process.exit(3)
+console.log("[]")
+`)
+
+    const response = await BridgeApp.request("http://localhost/api/missions?status=active")
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([])
+  })
+})
+
 test("the bridge defaults to loopback", () => {
   expect(DEFAULT_BRIDGE_HOST).toBe("127.0.0.1")
 })

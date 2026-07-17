@@ -3,6 +3,7 @@ import { run } from "./afs-context/lib"
 import { path, project, type Project } from "./afs-context/project"
 
 const CACHE_LIMIT = 32
+const CACHE_MS = 120_000
 const OUTPUT_LIMIT = 32 * 1024
 const RETRY_MS = 30_000
 const TIMEOUT_MS = 10_000
@@ -93,10 +94,10 @@ export const AFSContextPlugin: Plugin = async ({ directory }) => {
 
   // Resolve the authoritative context through AFS itself. Invalid v2 projects
   // stay invisible; CLI-resolved v1 contexts remain compatible for one cycle.
-  let found: { value: Project | null; retry: number } | undefined
+  let found: { value: Project | null; until: number } | undefined
   let finding: Promise<Project | null> | undefined
   const locate = async () => {
-    if (found && (found.value || found.retry > Date.now())) return found.value
+    if (found && found.until > Date.now()) return found.value
     if (finding) return finding
     finding = run([bin, "projects", "current", "--path", base, "--json"], {
       timeout: TIMEOUT_MS,
@@ -112,16 +113,17 @@ export const AFSContextPlugin: Plugin = async ({ directory }) => {
       })
       .catch(() => null)
       .then((value) => {
-        found = { value, retry: value ? 0 : Date.now() + RETRY_MS }
+        found = { value, until: Date.now() + (value ? CACHE_MS : RETRY_MS) }
         finding = undefined
         return value
       })
     return finding
   }
 
-  // Keep successful grounding per session. Failures get a short backoff rather
-  // than becoming permanent.
-  const grounding = new Map<string, { text: string; retry: number }>()
+  // Cache successful grounding briefly per session so project registration or
+  // context-root changes become visible without restarting hcode. Failures use
+  // a shorter backoff rather than becoming permanent.
+  const grounding = new Map<string, { text: string; until: number }>()
   const pending = new Map<string, Promise<string | null>>()
   const loadGrounding = async (): Promise<string | null> => {
     if (!(await locate())) return null
@@ -154,7 +156,7 @@ export const AFSContextPlugin: Plugin = async ({ directory }) => {
       if (cached) {
         grounding.delete(sessionID)
         grounding.set(sessionID, cached)
-        if (cached.retry === 0 || cached.retry > Date.now()) {
+        if (cached.until > Date.now()) {
           if (cached.text) output.system.push(cached.text)
           return
         }
@@ -168,7 +170,10 @@ export const AFSContextPlugin: Plugin = async ({ directory }) => {
           .then((text) => {
             pending.delete(sessionID)
             grounding.delete(sessionID)
-            grounding.set(sessionID, { text: text ?? "", retry: text === null ? Date.now() + RETRY_MS : 0 })
+            grounding.set(sessionID, {
+              text: text ?? "",
+              until: Date.now() + (text === null ? RETRY_MS : CACHE_MS),
+            })
             while (grounding.size > CACHE_LIMIT) grounding.delete(grounding.keys().next().value!)
             return text
           })

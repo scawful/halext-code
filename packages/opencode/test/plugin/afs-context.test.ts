@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test"
 import { chmod, mkdir, mkdtemp, readFile, rm } from "fs/promises"
 import { tmpdir as osTmpdir } from "os"
 import { join, parse } from "path"
@@ -61,6 +61,7 @@ process.exit(0)
 })
 
 afterEach(async () => {
+  setSystemTime()
   if (env.bin === undefined) delete process.env.AFS_BIN
   else process.env.AFS_BIN = env.bin
   if (env.cli === undefined) delete process.env.AFS_CLI
@@ -114,6 +115,28 @@ describe("plugin.afs-context", () => {
     expect(calls).toHaveLength(1)
     expect(parse(calls[0]?.[0] ?? "").base).toBe("projects")
     expect(calls[0]?.slice(1)).toEqual(["current", "--path", nested, "--json"])
+  })
+
+  test("refreshes successful project discovery after the bounded cache window", async () => {
+    const log = join(fixture!, "calls.jsonl")
+    process.env.HCODE_AFS_TEST_LOG = log
+    const plugin = await AFSContextPlugin({ directory: dir, worktree: root } as any)
+    const run = () =>
+      plugin["tool.execute.before"]?.(
+        { tool: "afs_local_context_status" } as any,
+        { args: {} } as any,
+      )
+
+    await run()
+    await run()
+    setSystemTime(new Date(Date.now() + 121_000))
+    await run()
+
+    const calls = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+    expect(calls).toHaveLength(2)
   })
 
   for (const mode of ["empty", "malformed", "unregistered"] as const) {
