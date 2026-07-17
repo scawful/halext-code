@@ -15,6 +15,7 @@ Lead with the plain CLI vocabulary:
 - `afs projects`: inspect or register central-context projects
 - `afs jobs`: bounded background or one-shot work
 - `afs missions`: durable goals that outlive a session
+- `afs insights`: exact-scope research and human-reviewed learning candidates
 - `afs check`: AFS health checks
 - `afs repair`: explicit diagnosis and repair
 
@@ -32,6 +33,8 @@ Then mention the small project wrappers that add hcode-specific policy:
 - `/afs-approvals` for pending requests; resolve only on explicit human direction
 - `/afs-schema` for structured-response validation
 - `/afs-optimize` for deterministic evidence review, never automatic promotion
+- `/afs-insights` for scoped research, deterministic reflection, and human-only
+  learning review
 - `/afs-refresh` for an intentional search/index refresh
 - `/afs-pack` for an explicit heavy export
 - `/afs-update-work` for a reviewed harness update
@@ -47,7 +50,8 @@ Rules:
 - Keep writes scoped to the current project unless the user explicitly requests
   an all-project operation.
 - Never resolve approvals, send external communications, or promote an
-  optimization candidate without explicit user direction.
+  optimization or insight candidate without explicit human direction. Insight
+  promotion also requires the human to complete the terminal confirmation.
 - If `$ARGUMENTS` is present, recommend only the smallest relevant sequence.
 
 $ARGUMENTS

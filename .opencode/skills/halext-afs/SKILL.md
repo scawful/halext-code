@@ -14,14 +14,19 @@ scratchpad, handoffs, jobs, knowledge lookup, or AFS migration choices.
 - Prefer the `afs_local_*` MCP tools over rebuilding AFS behavior in
   TypeScript.
 - Prefer the plain AFS CLI vocabulary: `start`, `search`, `files`, `notes`,
-  `handoff`, `messages`, `projects`, `jobs`, `missions`, `check`, and `repair`.
-  Use `/afs-next <intent>` only as a compatibility router for an older AFS
-  installation.
+  `handoff`, `messages`, `projects`, `jobs`, `missions`, `insights`, `check`,
+  and `repair`. Use `/afs-next <intent>` only as a compatibility router for an
+  older AFS installation.
 - Prefer short aliases for common daily workflows: `/start`, `/find`, `/check`,
   `/ship`, `/reply`, `/handoff`, `/fixafs`, and `/setupafs`.
 - Project slash commands remain useful wrappers for interactive work, notably
   `/afs-brief`, `/afs-review-context`, `/afs-work-preflight`, `/afs-verify`,
-  `/afs-refresh`, `/afs-pack`, and `/afs-update-work`.
+  `/afs-insights`, `/afs-refresh`, `/afs-pack`, and `/afs-update-work`.
+- Use `/afs-insights` for current-project research and deterministic failure
+  reflection. Embeddings and internet are separate explicit choices; internet
+  requires an installed extension provider plus allowed domains. Candidates
+  remain pending until a human supplies the rationale and completes terminal
+  confirmation; agents must never confirm promotion.
 - Use `/afs-help` when the right AFS command is unclear or when a user needs a
   lightweight menu of the available flows.
 - Follow the scoped discovery ladder: start -> search -> exact files/notes ->
