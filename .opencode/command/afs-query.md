@@ -1,20 +1,20 @@
 ---
-description: query AFS context, memory, scratchpad, and knowledge
+description: search AFS context, notes, memory, and knowledge
 ---
 
-Use Python AFS to answer this workspace-context question:
+Search the current registered AFS project for:
 
 `$ARGUMENTS`
 
 Rules:
 
-- Start with `afs_local_context_query`.
-- Use other cheap `afs_local_*` reads only if they materially improve the
-  answer.
-- Do not call `afs_local_session_pack` unless the user explicitly asks for a
-  pack or handoff export.
-- If the index is built but stale, still answer with the available context and
-  mention freshness as an advisory caveat rather than a hard blocker.
+- Prefer the plain `afs search` CLI; inspect `afs search --help` before using
+  version-specific flags.
+- In an already connected slim MCP session, `afs_local_context_query` is an
+  acceptable cheap equivalent.
+- Read exact files only when results point to them.
+- Never broaden to all projects implicitly.
+- Report semantic fallback or stale-index state as an honest caveat.
+- Do not call `afs_local_session_pack`.
 
-Answer succinctly and include relevant context paths or source notes when they
-help.
+Answer succinctly and include relevant source paths.

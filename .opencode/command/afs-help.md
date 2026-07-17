@@ -1,76 +1,53 @@
 ---
-description: show the repo-local AFS command menu and when to use each flow
+description: show the plain AFS command menu and project wrappers
 ---
 
-Explain the repo-local AFS command surface for this workspace.
+Explain the AFS command surface for this workspace.
 
-Keep it short and pragmatic. Include:
+Lead with the plain CLI vocabulary:
 
-- Short daily aliases:
-  - `/start` catch up and continue
-  - `/find <topic>` search AFS context
-  - `/check` verify the current change
-  - `/ship` scope, verify, and commit/push if explicitly requested
-  - `/reply` work-safe draft/preflight
-  - `/handoff` continuity note
-  - `/fixafs` dry-run context/index repair
-  - `/setupafs` manager/setup preview
-- `/afs-next [intent]` for the deterministic router when the right AFS surface
-  is not obvious
-- `/afs-brief` for a cheap combined workspace briefing
-- `/afs-help` for this menu
-- `/afs-status` for a cheap workspace summary
-- `/afs-query <question>` for context, knowledge, scratchpad, or memory lookup
-- `/afs-files <path or intent>` for context-scoped read/list/write work
-- `/afs-tasks` for current repo-local tasks
-- `/afs-handoff [needle]` for recent or specific handoffs
-- `/afs-handoff-create [note]` for writing a fresh handoff packet
-- `/afs-review-context [topic]` for checking context health, drift, and missing
-  AFS state before work or review
-- `/afs-work-preflight [purpose]` for style evidence and approval guardrails
-  before work-facing writing
-- `/afs-verify [change]` for the fastest relevant verification pass
-- `/afs-missions` for durable cross-session missions (list, inspect, update)
-- `/afs-approvals` for pending approval requests (resolve only on explicit
-  user instruction)
-- `/afs-schema` for structured-response schemas (list, show, validate)
-- `/afs-optimize` for the deterministic optimization decision gate on
-  evidence files
-- `/afs-refresh` for explicit index or context refresh work when freshness
-  matters
-- `/afs-pack` for an explicit heavy handoff/export pack
-- `/afs-update-work` for previewing/applying the AFS harness update path
-- `@afs-context` for cheap AFS context lookup
-- `@afs-planner`, `@afs-reviewer`, and `@afs-worker` for AFS-aware delegation
-- `@critic` for a strict second pass on slop, overreach, regressions, and tests
-- exact-name specialized agents exist for advanced verification, handoff,
-  work-preflight, and operator lanes, but slash commands are the normal route
+- `afs start`: catch up in the current AFS-resolved project scope
+- `afs search`: hybrid context and knowledge search
+- `afs files`: exact context-scoped file operations
+- `afs notes`: readable working and durable notes
+- `afs handoff`: inspect or create immutable continuity revisions
+- `afs messages`: scoped inter-agent messages
+- `afs projects`: inspect or register central-context projects
+- `afs jobs`: bounded background or one-shot work
+- `afs missions`: durable goals that outlive a session
+- `afs check`: AFS health checks
+- `afs repair`: explicit diagnosis and repair
+
+Tell the user to inspect `<command> --help` before an unfamiliar write because
+flags can differ across compatible AFS versions. Do not invent note or handoff
+flags.
+
+Then mention the small project wrappers that add hcode-specific policy:
+
+- `/start`, `/find`, `/check`, `/handoff`, and `/fixafs` for daily work
+- `/afs-brief` for a combined workspace briefing
+- `/afs-review-context` for context health and drift review
+- `/afs-work-preflight` before work-facing writing
+- `/afs-verify` before calling a code change done
+- `/afs-approvals` for pending requests; resolve only on explicit human direction
+- `/afs-schema` for structured-response validation
+- `/afs-optimize` for deterministic evidence review, never automatic promotion
+- `/afs-refresh` for an intentional search/index refresh
+- `/afs-pack` for an explicit heavy export
+- `/afs-update-work` for a reviewed harness update
+- `/afs-next` only as a compatibility router for older AFS installations
 
 Rules:
 
-- Make it clear that `/afs-next` is the first stop when an agent is unsure; it
-  should prevent browsing hidden agents, docs, or a full MCP catalog.
-- Make it clear that the short aliases are just memorable wrappers around
-  `/afs-next` and the same approval/verification guardrails.
-- Make it clear that `/afs-brief`, `/afs-status`, `/afs-query`, `/afs-tasks`,
-  `/afs-files`, `/afs-handoff`, and `/afs-review-context` are the normal
-  low-friction paths.
-- Make it clear that `/afs-handoff-create` is an intentional write step, but
-  still lighter than `/afs-pack`.
-- Make it clear that `/afs-missions` is for goals that outlive a session,
-  `/afs-approvals` never resolves requests without explicit user direction,
-  and `/afs-optimize` produces recommendations for human review, never
-  activation.
-- Make it clear that `/afs-work-preflight` is mandatory before external work
-  writing, and that posting/sending still requires explicit approval.
-- Make it clear that `/afs-refresh`, `/afs-pack`, and `/afs-update-work` are
-  intentional, heavier-weight actions.
-- Make it clear that the default MCP catalog stays slim; task, handoff, memory,
-  work, repair, and pack behavior should use commands or the AFS CLI unless a
-  full-catalog session is explicitly requested.
-- Make the discovery ladder explicit: status -> query -> exact read/list ->
-  scratchpad write -> named command.
-- If the user supplied `$ARGUMENTS`, tailor the recommendation order to that
-  intent.
+- Keep the menu short and use plain user-facing terms.
+- Make clear that central context is resolved by `afs projects current`, not by
+  searching parent directories for `.context`.
+- Keep the default MCP catalog slim; prefer a named CLI flow instead of browsing
+  the full catalog.
+- Keep writes scoped to the current project unless the user explicitly requests
+  an all-project operation.
+- Never resolve approvals, send external communications, or promote an
+  optimization candidate without explicit user direction.
+- If `$ARGUMENTS` is present, recommend only the smallest relevant sequence.
 
 $ARGUMENTS

@@ -1,20 +1,21 @@
-Route the current request through the deterministic AFS funnel.
+---
+description: compatibility router for older AFS command sets
+---
+
+Route the current request only when the installed AFS lacks a suitable plain
+command.
 
 Intent hint: `$ARGUMENTS`
 
 Rules:
 
-- Prefer this before browsing AFS docs, hidden agents, or nondefault MCP tools.
+- Prefer `afs start/search/files/notes/handoff/messages/projects/jobs/missions/check/repair`
+  when the matching command exists.
 - If `$ARGUMENTS` is empty, use `continue`.
-- Run the repo-local router:
+- Otherwise run:
 
   `"${AFS_BIN:-${AFS_CLI:-afs}}" next --path . --intent "$ARGUMENTS" --json`
-- Follow the returned `first_step`, `mcp_sequence`, and first relevant command.
-- Stop when the returned `stop_when` condition is satisfied.
-- Do not call task, handoff, memory, work, repair, diff/freshness, or pack MCP
-  tools unless the router or user explicitly routes there.
-- If you need to measure whether agents are using the funnel, run:
+- Follow one returned first step and stop when its stop condition is satisfied.
+- Do not use this router to bypass project scope or approval boundaries.
 
-  `"${AFS_BIN:-${AFS_CLI:-afs}}" next report --path . --json`
-
-Return the selected route, what you did, and the next concrete action.
+Return the selected route, what ran, and the next concrete action.

@@ -1,26 +1,17 @@
 ---
-description: create a fresh AFS handoff packet for this workspace
+description: create an immutable readable AFS handoff revision
 ---
 
-Create a new handoff packet for this workspace using Python AFS.
+Create a scoped handoff through the plain `afs handoff` CLI.
 
 Rules:
 
-- Use cheap AFS reads first only when they materially improve the handoff:
-  `afs_local_context_status`, `afs_local_context_query`, `afs_local_context_list`,
-  and `afs_local_context_read`.
-- Then write one concise markdown handoff under `scratchpad/handoffs/` with
-  `afs_local_context_write`.
-- Use MCP `handoff.create` only in an explicit full-catalog/debug session.
-- Fold `$ARGUMENTS` into the handoff as operator note, emphasis, or extra next
-  step when helpful.
-- Do not call session pack in this command.
+- Inspect `"${AFS_BIN:-${AFS_CLI:-afs}}" handoff --help` before writing; do not
+  invent version-specific flags.
+- Require a short readable title and include current state, changed files,
+  verification, blockers, and next steps.
+- Fold `$ARGUMENTS` into the title or operator note when useful.
+- Let AFS assign the unique readable revision filename and scope metadata.
+- Do not write an ad-hoc context file and do not run session pack.
 
-Summarize:
-
-- the created handoff path
-- the main accomplished items
-- the main blockers if any
-- the stored next steps
-
-$ARGUMENTS
+Return the stream/revision identifier and a concise summary.

@@ -1,24 +1,19 @@
 ---
-description: diagnose stale or broken AFS context without expanding the tool catalog
+description: diagnose or repair AFS with the plain safe command
 ---
 
-Diagnose and repair AFS setup, context, or index issues.
+Diagnose AFS setup, scope, context, or index issues.
 
 Rules:
 
-- Run the router:
+- Start with `"${AFS_BIN:-${AFS_CLI:-afs}}" projects current --path . --json`.
+- Inspect `"${AFS_BIN:-${AFS_CLI:-afs}}" repair --help`, then choose its
+  non-mutating preview or narrowest safe action.
+- Do not rebuild large indexes, remap sources, migrate layout, or start
+  background agents without explicit user approval.
+- Treat stale search data as an advisory unless the index is missing or its
+  sources are unhealthy.
 
-  `"${AFS_BIN:-${AFS_CLI:-afs}}" next --path . --intent refresh --json`
-
-- Prefer dry-run repair first:
-
-  `"${AFS_BIN:-${AFS_CLI:-afs}}" context repair --path . --dry-run --json`
-
-- Do not rebuild large indexes, remap mounts, mutate client config, or start
-  background agents unless the user explicitly approves that action.
-- Report whether refresh is actually needed; stale index is often only a search
-  freshness advisory.
-
-Return: diagnosis, dry-run repair plan, and safest next command.
+Return the diagnosis, preview, and safest next command.
 
 $ARGUMENTS

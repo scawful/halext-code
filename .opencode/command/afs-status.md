@@ -1,42 +1,21 @@
 ---
-description: cheap AFS status summary for this workspace
+description: cheap AFS health summary for the current registered project
 ---
 
-Use Python AFS through the local `afs_local_*` tools to report the current
-workspace state.
+Report current AFS state without a heavy pack.
 
 Rules:
 
-- Keep this cheap and fast.
-- Start with `afs_local_context_status`.
-- Use `afs_local_context_query`, `afs_local_context_list`, or
-  `afs_local_context_read` only when they add real signal.
-- Do not call nondefault task, handoff, memory, diff, freshness, repair, or
-  session-pack MCP tools. Point to the matching slash command or AFS CLI flow
-  when those details matter.
-- Do not call `afs_local_session_pack` in this command.
-- If the index is built but marked stale, describe that as a refresh
-  recommendation for search-heavy work, not as a broken or missing index.
-- If the index is built and mounts are healthy, explicitly say there are no
-  urgent AFS failures.
-- Do not end by asking whether to rebuild/refresh unless the user explicitly
-  asked for next steps or the index is actually missing/broken.
-- If `suggested_actions` is empty and mount health is healthy, prefer
-  \"no action required unless you need fresher search results\".
+- Resolve scope with `afs projects current --path . --json`.
+- Prefer the plain `afs check` health surface; inspect its `--help` before
+  version-specific flags.
+- In an already connected slim MCP session, `afs_local_context_status` is an
+  acceptable cheap equivalent.
+- Use search or exact file reads only when they add real signal.
+- Treat a built-but-stale index as a search advisory, not a default failure.
+- Do not repair, rebuild, or run session pack.
 
-Summarize:
-
-- overall context health
-- stale index or freshness issues
-- task or handoff details only as routed follow-up commands
-- one short recommendation if maintenance is needed, preferably pointing to
-  `/afs-refresh` when a refresh is the right next step
-
-Output style:
-
-- Use a short bullet list.
-- End with exactly one closing line.
-- When mounts are healthy and the index is built, that closing line should be:
-  `No action required unless you need fresher search results; use /afs-refresh then.`
+Summarize project scope, context health, search freshness, and one short
+recommendation only if maintenance is needed.
 
 $ARGUMENTS

@@ -1,25 +1,20 @@
 ---
-description: inspect or preview friendly AFS setup for this workspace
+description: inspect or register the current project with central AFS
 ---
 
-Inspect or preview AFS setup for this workspace.
+Inspect AFS setup for this workspace.
 
 Rules:
 
-- Run the router:
+- Run `"${AFS_BIN:-${AFS_CLI:-afs}}" projects current --path . --json`.
+- If layout v2 reports the project unregistered, inspect
+  `afs projects register --help` and show the exact proposed registration
+  command before applying it. Report a CLI-resolved v1 root as compatibility
+  state rather than treating it as a v2 registration.
+- Use `afs repair` only for a diagnosed context problem.
+- Do not create a new local context root, migrate live data, or mutate harness
+  config without explicit user approval.
 
-  `"${AFS_BIN:-${AFS_CLI:-afs}}" next --path . --intent setup --json`
-
-- Prefer manager snapshot or setup dry-run before writing anything:
-
-  `"${AFS_BIN:-${AFS_CLI:-afs}}" manager snapshot --path . --json`
-
-  `"${AFS_BIN:-${AFS_CLI:-afs}}" setup --workspace . --dry-run`
-
-- Do not mutate `.gemini`, `.claude`, `.opencode`, `.mcp.json`, shell startup,
-  or extension config unless the user approves the preview.
-
-Return: current setup state, recommended setup action, and exact apply command
-if approval is needed.
+Return current project/scope state and the narrowest approved setup action.
 
 $ARGUMENTS
