@@ -111,12 +111,12 @@ Also included are subagents for delegation, including **general** and
 **explore**. This fork adds AFS-oriented project agents such as
 `@afs-context`, `@afs-planner`, `@afs-reviewer`, `@afs-worker`, and `@critic`.
 
-The default AFS MCP catalog stays slim. Use slash commands such as
-`/afs-next`, `/afs-help`, `/afs-query`, `/afs-handoff`,
-`/afs-work-preflight`, `/afs-verify`, `/afs-missions`, `/afs-approvals`,
-`/afs-schema`, `/afs-optimize`, and `/afs-pack` for richer AFS workflows.
-`/afs-next` is the default router when an agent is unsure which AFS
-surface to use.
+The default AFS MCP catalog stays slim. The plain AFS CLI uses memorable
+surfaces: `start`, `search`, `files`, `notes`, `handoff`, `messages`,
+`projects`, `jobs`, `missions`, `check`, and `repair`. Project slash commands
+such as `/afs-help`, `/afs-work-preflight`, `/afs-verify`, `/afs-approvals`,
+`/afs-schema`, `/afs-optimize`, and `/afs-pack` remain convenient wrappers.
+`/afs-next` is a compatibility router for older AFS installations.
 Daily aliases keep common paths short: `/start`, `/find`, `/check`, `/ship`,
 `/reply`, `/handoff`, `/fixafs`, and `/setupafs`.
 

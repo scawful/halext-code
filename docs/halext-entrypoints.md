@@ -14,15 +14,21 @@ Use this for normal coding, tool calls, and AFS-aware chat workflows.
 
 Recommended AFS commands in this mode:
 
+- `afs start`
+- `afs search`
+- `afs files`
+- `afs notes`
+- `afs handoff`
+- `afs messages`
+- `afs projects`
+- `afs jobs`
+- `afs missions`
+- `afs check`
+- `afs repair`
+- `/afs-help` (wrapper menu)
 - `/afs-brief`
-- `/afs-status`
-- `/afs-query`
-- `/afs-files`
-- `/afs-tasks`
-- `/afs-handoff`
 - `/afs-work-preflight`
 - `/afs-verify`
-- `/afs-missions`
 - `/afs-approvals`
 - `/afs-schema`
 - `/afs-optimize`
@@ -53,7 +59,7 @@ state, with file browsing and previews.
 - AFS Explorer lane:
   - `AFS focus` mode prioritizing `.context` and mount directories
   - `Show all` filesystem mode
-  - mount quick-jump chips (`scratchpad`, `items`, `hivemind`, etc)
+  - category quick-jump chips (`scratchpad`, `memory`, `messages`, etc)
   - file preview
 
 ## 3) Halext TUI (terminal cockpit)

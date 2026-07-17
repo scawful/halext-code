@@ -1,21 +1,16 @@
 ---
-description: find repo context, scratchpad notes, or prior decisions through AFS
+description: search current-project context and prior decisions through AFS
 ---
 
 Find relevant AFS context for the user's question.
 
 Rules:
 
-- Start with the router:
+- Resolve the project through AFS; never infer context from a local `.context`.
+- Inspect `"${AFS_BIN:-${AFS_CLI:-afs}}" search --help` if needed, then run the
+  smallest focused `afs search` in the current project scope for `$ARGUMENTS`.
+- Prefer hybrid results and read exact files only when a result points to them.
+- Expand to all projects only when the user explicitly requests it.
+- Report search fallback or index freshness honestly.
 
-  `"${AFS_BIN:-${AFS_CLI:-afs}}" next --path . --intent context --json`
-
-- If `$ARGUMENTS` names a topic, run a focused query:
-
-  `"${AFS_BIN:-${AFS_CLI:-afs}}" query "$ARGUMENTS" --path . --limit 8 --json`
-
-- Read exact files only when query results point to them.
-- Do not broaden into memory/task/handoff MCP tools; route those through slash
-  commands or the AFS CLI if needed.
-
-Return source paths, freshness caveats, and the answer.
+Return source paths, scope, freshness caveats, and the answer.

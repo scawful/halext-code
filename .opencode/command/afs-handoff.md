@@ -1,24 +1,15 @@
 ---
-description: inspect recent AFS handoffs for this workspace
+description: inspect readable AFS handoff streams and revisions
 ---
 
-Use Python AFS to inspect handoff state for this workspace.
-
-If `$ARGUMENTS` is empty:
-
-- list recent handoffs and summarize the most relevant recent one
-
-If `$ARGUMENTS` is present:
-
-- use it to identify the most relevant handoff
-- then read that handoff if needed
+Inspect handoff state for the current project through the plain `afs handoff`
+CLI. Run `afs handoff --help` first if the installed version's read/list flags
+are not already known.
 
 Rules:
 
-- Start with `afs_local_context_list` on `scratchpad/handoffs`.
-- Use `afs_local_context_read` only when a specific handoff should be opened.
-- Use MCP `handoff.*` only in an explicit full-catalog/debug session.
-- If the user clearly wants a new handoff packet instead of inspection, point
-  them to `/afs-handoff-create`.
-- Do not call session pack in this command unless the user explicitly asks for a
-  new handoff or export pack.
+- List current-project streams or revisions, then read only the relevant one.
+- Use `$ARGUMENTS` as a title, identifier, or search hint when present.
+- Never search a guessed handoff storage directory directly.
+- If the user wants a new handoff, use the same CLI's immutable revision flow.
+- Do not call session pack unless the user asks for a heavy export.

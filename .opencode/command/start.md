@@ -1,25 +1,20 @@
 ---
-description: quick AFS catch-up for the current workspace
+description: quick AFS catch-up for the current project scope
 ---
 
 Catch up quickly before continuing work.
 
 Rules:
 
-- Use this instead of browsing AFS docs or the full MCP catalog.
-- Run the deterministic router:
+- Run `"${AFS_BIN:-${AFS_CLI:-afs}}" start --path . --json`.
+- For layout v2, stop and explain if AFS says the project is unregistered; do
+  not guess a nearby `.context` directory. Trust a v1 compatibility root only
+  when AFS explicitly returns it.
+- Search or read exact artifacts only when the start packet shows they matter.
+- Use `afs missions` when durable goals are relevant.
+- Use `/afs-brief` only when the user wants a fuller workspace brief.
+- Do not run repair or build an export pack unless the user requested it.
 
-  `"${AFS_BIN:-${AFS_CLI:-afs}}" next --path . --intent continue --json`
-
-- Follow the returned first step. Usually that means cheap status, then a
-  targeted query/read only if prior state is actually needed.
-- If prior state matters, also check active durable missions cheaply:
-
-  `"${AFS_BIN:-${AFS_CLI:-afs}}" mission list --path . --status active --limit 5 --json`
-- Prefer `/afs-brief` only if the user wants a fuller workspace brief.
-- Do not call task, handoff, memory, repair, freshness, or pack MCP tools unless
-  the router or user explicitly routes there.
-
-Return: current state, any blocker/handoff signal, and the next concrete action.
+Return current state, the project scope, blockers, and the next concrete action.
 
 $ARGUMENTS

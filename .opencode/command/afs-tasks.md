@@ -1,23 +1,17 @@
 ---
-description: show current AFS tasks for this workspace
+description: show bounded AFS jobs for the current project
 ---
 
-Use Python AFS or the AFS CLI to inspect the current task queue for this
-workspace.
+Use the plain `afs jobs` CLI to inspect actionable one-shot or background work
+for this project.
 
 Rules:
 
-- Prefer `"${AFS_BIN:-${AFS_CLI:-afs}}" tasks list --path . --json` because
-  `task.*` is not part of the default slim MCP catalog.
-- Use MCP task tools only in an explicit full-catalog/debug session.
-- Keep the answer focused on actionable tasks, blockers, and next steps.
-- Do not call session pack in this command.
+- Inspect `afs jobs --help`, then choose the smallest read-only list/show flow.
+- Use `afs missions` instead for durable goals that outlive a session.
+- Do not claim or complete work unless the user requested that mutation.
+- Do not assume full-catalog task MCP tools are visible.
 
-Summarize:
-
-- active and pending tasks
-- ownership if available
-- blockers or missing handoff context
-- the most sensible next action
+Summarize actionable jobs, ownership, blockers, and the next sensible action.
 
 $ARGUMENTS

@@ -1,24 +1,35 @@
 import { describe, expect, test } from "bun:test"
-import { mkdir } from "node:fs/promises"
-import { join } from "node:path"
-import { approvals, context, COUNT, missions, snapshot } from "../../src/cli/cmd/tui/routes/session/sidebar-afs-data"
-import { tmpdir } from "../fixture/fixture"
+import { resolve } from "node:path"
+import { approvals, COUNT, missions, project, snapshot } from "../../src/cli/cmd/tui/routes/session/sidebar-afs-data"
 
 describe("sidebar AFS data", () => {
-  test("finds the nearest ancestor context", async () => {
-    await using tmp = await tmpdir()
-    const parent = join(tmp.path, "project")
-    const child = join(parent, "src", "feature")
-    await mkdir(join(tmp.path, ".context"))
-    await mkdir(join(parent, ".context"), { recursive: true })
-    await mkdir(child, { recursive: true })
-
-    expect(context(child)).toBe(parent)
+  test("accepts only a registered central-context project", () => {
+    const value = {
+      context_root: resolve("central-context"),
+      layout_version: 2,
+      project_path: "/workspace/project",
+      registered: true,
+      scope_id: "project:prj_123",
+      project: { project_id: "prj_123" },
+    }
+    expect(project(value)).toEqual({ root: value.context_root, scope: "project:prj_123" })
+    expect(project({ ...value, registered: false })).toBeUndefined()
+    expect(project({ ...value, layout_version: 1 })).toBeUndefined()
+    expect(project({ ...value, context_root: ".context" })).toBeUndefined()
+    expect(project({ ...value, scope_id: "project:other" })).toBeUndefined()
   })
 
-  test("returns undefined without an ancestor context", async () => {
-    await using tmp = await tmpdir()
-    expect(context(tmp.path)).toBeUndefined()
+  test("keeps CLI-resolved v1 contexts compatible", () => {
+    const root = resolve("legacy-context")
+    expect(
+      project({
+        context_root: root,
+        layout_version: 1,
+        registered: false,
+        scope_id: "common",
+        project: null,
+      }),
+    ).toEqual({ root, scope: "common" })
   })
 
   test("accepts complete mission arrays and rejects malformed arrays", () => {
