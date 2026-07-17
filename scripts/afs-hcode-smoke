@@ -59,10 +59,14 @@ require_flag() {
 }
 
 say "smoke: checking AFS attention and schema CLI contracts"
-mission_help="$(help_for mission list)"
-require_flag "mission list" "--status" "$mission_help"
-require_flag "mission list" "--limit" "$mission_help"
-require_flag "mission list" "--json" "$mission_help"
+mission_label="missions list"
+if ! mission_help="$("$afs_cli" missions list --help 2>/dev/null)"; then
+  mission_label="mission list (compatibility)"
+  mission_help="$(help_for mission list)"
+fi
+require_flag "$mission_label" "--status" "$mission_help"
+require_flag "$mission_label" "--limit" "$mission_help"
+require_flag "$mission_label" "--json" "$mission_help"
 
 approval_help="$(help_for approvals approve)"
 require_flag "approvals approve" "--because" "$approval_help"
@@ -97,6 +101,15 @@ if ! grep -Fq 'process.env.AFS_BIN?.trim() || process.env.AFS_CLI?.trim() || "af
   echo "AFS session grounding must honor AFS_BIN, AFS_CLI, then PATH" >&2
   exit 1
 fi
+if ! grep -Fq '"projects", "current", "--path", base, "--json"' \
+  "$ROOT/.opencode/plugins/afs-context.ts"; then
+  echo "AFS plugin must resolve the central project through the CLI" >&2
+  exit 1
+fi
+if ! grep -Fq 'args.project_path = base' "$ROOT/.opencode/plugins/afs-context.ts"; then
+  echo "AFS tool calls must retain the project path for v2 scope enforcement" >&2
+  exit 1
+fi
 if ! grep -Fq '"{env:AFS_CLI}", "mcp", "serve"' "$ROOT/.opencode/opencode.jsonc"; then
   echo "afs_local MCP must use the launcher-selected AFS_CLI" >&2
   exit 1
@@ -106,37 +119,59 @@ if ! grep -Fq -- '--skeleton <human-plan.json>' "$ROOT/.opencode/agent/afs-plann
   exit 1
 fi
 
-say "smoke: checking repo-local AFS status hook"
-status="$(grab debug agent build --tool afs_local_context_status --params '{}')"
-ctx="$(json_get result.structuredContent.context_path "$status")"
-if [[ "$ctx" != "$dir/.context" ]]; then
-  echo "expected context_path $dir/.context, got $ctx" >&2
-  exit 1
+project=""
+if project="$("$afs_cli" projects current --path "$dir" --json 2>/dev/null)"; then
+  layout="$(json_get layout_version "$project" 2>/dev/null || true)"
+  registered="$(json_get registered "$project" 2>/dev/null || true)"
+  scope="$(json_get scope_id "$project" 2>/dev/null || true)"
+else
+  layout=""
+  registered=""
+  scope=""
 fi
+if [[ "$layout" == "2" && "$registered" == "true" ]] || \
+  [[ "$layout" == "1" && "$registered" == "false" && "$scope" == "common" ]]; then
+  root="$(json_get context_root "$project")"
+  scratchpad="$root/scratchpad"
+  if [[ "$layout" == "2" ]]; then
+    project_id="$(json_get project.project_id "$project")"
+    scratchpad="$scratchpad/projects/$project_id"
+  fi
 
-say "smoke: checking repo-local context file-path normalization"
-list="$(grab debug agent build --tool afs_local_context_list --params '{"path":"scratchpad","max_depth":1}')"
-list_path="$(json_get result.structuredContent.path "$list")"
-if [[ "$list_path" != "$dir/.context/scratchpad" ]]; then
-  echo "expected normalized scratchpad path, got $list_path" >&2
-  exit 1
-fi
+  say "smoke: checking central-context AFS status hook"
+  status="$(grab debug agent build --tool afs_local_context_status --params '{}')"
+  ctx="$(json_get result.structuredContent.context_path "$status")"
+  if [[ "$ctx" != "$root" ]]; then
+    echo "expected context_path $root, got $ctx" >&2
+    exit 1
+  fi
 
-say "smoke: checking default context read/write tools"
-note=".context/scratchpad/afs_hcode_smoke.md"
-body="hcode smoke: default AFS context tools"
-write="$(grab debug agent build --tool afs_local_context_write --params "{\"path\":\"$note\",\"content\":\"$body\\n\"}")"
-write_path="$(json_get result.structuredContent.path "$write")"
-if [[ "$write_path" != "$dir/$note" ]]; then
-  echo "expected normalized write path $dir/$note, got $write_path" >&2
-  exit 1
-fi
+  say "smoke: checking central context file-path normalization"
+  list="$(grab debug agent build --tool afs_local_context_list --params '{"path":"scratchpad","max_depth":1}')"
+  list_path="$(json_get result.structuredContent.path "$list")"
+  if [[ "$list_path" != "$scratchpad" ]]; then
+    echo "expected normalized scratchpad path $scratchpad, got $list_path" >&2
+    exit 1
+  fi
 
-read="$(grab debug agent build --tool afs_local_context_read --params "{\"path\":\"$note\"}")"
-read_text="$(json_get result.structuredContent.content "$read")"
-if [[ "$read_text" != "$body" ]]; then
-  echo "expected smoke note readback, got $read_text" >&2
-  exit 1
+  say "smoke: checking default context read/write tools"
+  note=".context/scratchpad/afs_hcode_smoke.md"
+  body="hcode smoke: default AFS context tools"
+  write="$(grab debug agent build --tool afs_local_context_write --params "{\"path\":\"$note\",\"content\":\"$body\\n\"}")"
+  write_path="$(json_get result.structuredContent.path "$write")"
+  if [[ "$write_path" != "$scratchpad/afs_hcode_smoke.md" ]]; then
+    echo "expected normalized write path under $scratchpad, got $write_path" >&2
+    exit 1
+  fi
+
+  read="$(grab debug agent build --tool afs_local_context_read --params "{\"path\":\"$note\"}")"
+  read_text="$(json_get result.structuredContent.content "$read")"
+  if [[ "$read_text" != "$body" ]]; then
+    echo "expected smoke note readback, got $read_text" >&2
+    exit 1
+  fi
+else
+  say "smoke: central-context integration skipped (CLI unavailable or project unregistered)"
 fi
 
 if [[ "$live" == "1" ]]; then

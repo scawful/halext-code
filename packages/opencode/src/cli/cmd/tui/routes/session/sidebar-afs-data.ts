@@ -1,5 +1,4 @@
-import { existsSync } from "node:fs"
-import { dirname, join, resolve } from "node:path"
+import { isAbsolute } from "node:path"
 
 export type Mission = {
   mission_id: string
@@ -12,6 +11,11 @@ type Approval = {
   agent: string
   action: string
   status: string
+}
+
+export type Project = {
+  root: string
+  scope: string
 }
 
 export const BYTES = 256_000
@@ -46,15 +50,17 @@ function approval(value: unknown): value is Approval {
   return typeof value.status === "string" && value.status.length > 0
 }
 
-export function context(dir: string) {
-  const start = resolve(dir)
-  const walk = (root: string): string | undefined => {
-    if (existsSync(join(root, ".context"))) return root
-    const parent = dirname(root)
-    if (parent === root) return
-    return walk(parent)
+export function project(value: unknown): Project | undefined {
+  if (!record(value)) return
+  if (typeof value.context_root !== "string" || !isAbsolute(value.context_root)) return
+  if (value.layout_version === 1 && value.registered === false && value.scope_id === "common") {
+    return { root: value.context_root, scope: value.scope_id }
   }
-  return walk(start)
+  if (value.layout_version !== 2 || value.registered !== true) return
+  if (typeof value.scope_id !== "string" || !value.scope_id.startsWith("project:")) return
+  if (!record(value.project) || typeof value.project.project_id !== "string" || !value.project.project_id) return
+  if (value.scope_id !== `project:${value.project.project_id}`) return
+  return { root: value.context_root, scope: value.scope_id }
 }
 
 export function missions(value: unknown) {

@@ -1,14 +1,13 @@
 import { createMemo, createResource, For, onCleanup, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useSync } from "../../context/sync"
-import { approvals, BYTES, context, missions, snapshot, type Snapshot } from "./sidebar-afs-data"
+import { approvals, BYTES, missions, project, snapshot, type Snapshot } from "./sidebar-afs-data"
 import { run } from "./sidebar-afs-runner"
 
 // Fork-owned AFS sidebar section. Reads project-management signals (open
 // missions, pending approvals) straight from the AFS CLI so it works without
-// the halext bridge running. Renders nothing unless the workspace has a
-// .context directory exists at or above the workspace and the CLI returns
-// data — plain upstream behavior everywhere else.
+// the halext bridge running. Renders only when AFS resolves a registered v2
+// project or an explicit v1 compatibility context for the current directory.
 
 const REFRESH_MS = 120_000
 
@@ -28,10 +27,19 @@ async function json(args: string[], signal: AbortSignal): Promise<Result> {
   }
 }
 
+async function list(dir: string, status: "active" | "blocked", signal: AbortSignal) {
+  const args = ["list", "--path", dir, "--status", status, "--limit", "3", "--json"]
+  const current = await json(["missions", ...args], signal)
+  if (current.ok) return current
+  return json(["mission", ...args], signal)
+}
+
 async function load(dir: string, signal: AbortSignal) {
+  const current = await json(["projects", "current", "--path", dir, "--json"], signal)
+  if (!current.ok || !project(current.value)) return
   const [activeMissions, blockedMissions, pending] = await Promise.all([
-    json(["mission", "list", "--path", dir, "--status", "active", "--limit", "3", "--json"], signal),
-    json(["mission", "list", "--path", dir, "--status", "blocked", "--limit", "3", "--json"], signal),
+    list(dir, "active", signal),
+    list(dir, "blocked", signal),
     json(["approvals", "list", "--json"], signal),
   ])
   const activeData = activeMissions.ok ? missions(activeMissions.value) : undefined
@@ -55,7 +63,9 @@ export function SidebarAfs() {
     active?.abort()
     const next = new AbortController()
     active = next
-    if (!context(dir)) {
+    const result = await load(dir, next.signal)
+    if (active !== next) return
+    if (!result) {
       active = undefined
       last = undefined
       return {
@@ -63,8 +73,6 @@ export function SidebarAfs() {
         enabled: false,
       }
     }
-    const result = await load(dir, next.signal)
-    if (active !== next) return { ...snapshot(dir, undefined, result), enabled: true }
     active = undefined
     last = snapshot(dir, last, result)
     return {
