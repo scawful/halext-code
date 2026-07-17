@@ -21,10 +21,10 @@ TypeScript rewrite.
   stdout at 32 KiB, coalesces concurrent requests, caps both cached and
   in-flight session sets at 32, and retries failures after a 30-second backoff.
 - Project slash commands in `.opencode/command/` provide wrappers around the
-  plain `afs start/search/files/notes/handoff/messages/projects/jobs/missions/check/repair`
+  plain `afs start/search/files/notes/handoff/messages/projects/jobs/missions/insights/check/repair`
   vocabulary, plus `/afs-brief`, `/afs-help`, `/afs-review-context`,
-  `/afs-work-preflight`, `/afs-verify`, `/afs-refresh`, `/afs-pack`, and
-  `/afs-update-work` flows.
+  `/afs-work-preflight`, `/afs-verify`, `/afs-insights`, `/afs-refresh`,
+  `/afs-pack`, and `/afs-update-work` flows.
 - Short aliases cover the common daily paths: `/start`, `/find`, `/check`,
   `/ship`, `/reply`, `/handoff`, `/fixafs`, and `/setupafs`.
 - The default Python AFS MCP catalog is intentionally slim: `context.status`,
@@ -90,6 +90,11 @@ TypeScript rewrite.
   the command remains explicit but less volatile than a full rebuild every time.
 - Treat a built-but-stale index as a refresh hint for search-heavy work, not as
   a default failure state.
+- Keep Insights scoped and human-gated. Local text/symbol research is the
+  default; embeddings and internet research are separate explicit choices.
+  AFS ships no internet provider, so network research requires a named enabled
+  extension plus allowed domains. Only a human may supply the rationale and
+  complete terminal confirmation that promotes a candidate.
 
 ## Context discovery contract
 
@@ -124,6 +129,7 @@ TypeScript rewrite.
    - `afs projects`
    - `afs jobs`
    - `afs missions`
+   - `afs insights`
    - `afs check`
    - `afs repair`
 4. Use the short slash aliases for common interactive workflows:
@@ -143,9 +149,11 @@ TypeScript rewrite.
    `/afs-help` if you need the command menu.
 7. Use `/afs-work-preflight` before work-facing writing and `/afs-verify` before
    calling a code change done.
-8. Use `/afs-refresh` only when stale search/index freshness actually matters.
-9. Use `/afs-pack` only when you actually need a handoff/export artifact.
-10. Use `/afs-update-work` to preview/apply the AFS harness update script from a
+8. Use `/afs-insights` for exact-scope research or deterministic reflection;
+   keep embeddings, internet access, and candidate promotion explicit.
+9. Use `/afs-refresh` only when stale search/index freshness actually matters.
+10. Use `/afs-pack` only when you actually need a handoff/export artifact.
+11. Use `/afs-update-work` to preview/apply the AFS harness update script from a
     work-machine checkout.
 
 ## Project agents

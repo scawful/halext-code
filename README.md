@@ -113,9 +113,10 @@ Also included are subagents for delegation, including **general** and
 
 The default AFS MCP catalog stays slim. The plain AFS CLI uses memorable
 surfaces: `start`, `search`, `files`, `notes`, `handoff`, `messages`,
-`projects`, `jobs`, `missions`, `check`, and `repair`. Project slash commands
-such as `/afs-help`, `/afs-work-preflight`, `/afs-verify`, `/afs-approvals`,
-`/afs-schema`, `/afs-optimize`, and `/afs-pack` remain convenient wrappers.
+`projects`, `jobs`, `missions`, `insights`, `check`, and `repair`. Project slash
+commands such as `/afs-help`, `/afs-work-preflight`, `/afs-verify`,
+`/afs-approvals`, `/afs-schema`, `/afs-optimize`, `/afs-insights`, and
+`/afs-pack` remain convenient wrappers.
 `/afs-next` is a compatibility router for older AFS installations.
 Daily aliases keep common paths short: `/start`, `/find`, `/check`, `/ship`,
 `/reply`, `/handoff`, `/fixafs`, and `/setupafs`.
