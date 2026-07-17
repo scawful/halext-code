@@ -38,8 +38,12 @@ const TOOLS = new Set([
   "afs_local_note_read",
   "afs_local_note_list",
   "afs_local_handoff_create",
+  "afs_local_handoff_revise",
   "afs_local_handoff_read",
   "afs_local_handoff_list",
+  "afs_local_handoff_threads",
+  "afs_local_handoff_ack",
+  "afs_local_handoff_close",
   "afs_local_hivemind_cleanup",
   "afs_local_memory_status",
   "afs_local_memory_search",
@@ -48,6 +52,11 @@ const TOOLS = new Set([
 ])
 
 const FILES = new Set([
+  "afs_local_fs_read",
+  "afs_local_fs_write",
+  "afs_local_fs_delete",
+  "afs_local_fs_move",
+  "afs_local_fs_list",
   "afs_local_context_read",
   "afs_local_context_write",
   "afs_local_context_delete",
@@ -170,8 +179,8 @@ export const AFSContextPlugin: Plugin = async ({ directory, worktree }) => {
       const current = await locate()
       if (!current) return
       const args = output.args as Record<string, unknown>
-      if (TOOLS.has(input.tool) || FILES.has(input.tool)) args.project_path = base
-      if (TOOLS.has(input.tool)) args.context_path = current.root
+      args.project_path = base
+      args.context_path = current.root
       if (FILES.has(input.tool)) {
         args.path = path(current, args.path)
         args.source = path(current, args.source)

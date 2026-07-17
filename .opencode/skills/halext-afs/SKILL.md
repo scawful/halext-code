@@ -7,7 +7,7 @@ compatibility: opencode
 ## When to use me
 
 Use this when work in `halext-code-next` touches context, session state,
-scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
+scratchpad, handoffs, jobs, knowledge lookup, or AFS migration choices.
 
 ## Working rules
 
@@ -29,11 +29,15 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
 - Use `afs_local_context_query` before asking for context that may already
   exist in knowledge, memory, scratchpad, or history.
 - Prefer the slim default MCP surface first: `afs_local_context_status`,
-  `afs_local_context_query`, `afs_local_context_read`,
-  `afs_local_context_write`, and `afs_local_context_list`.
-- Route work preflight, verification, handoff, refresh, repair, and session
-  pack flows through slash commands or the AFS CLI unless the session was
-  explicitly launched with the full AFS MCP catalog.
+  `afs_local_context_query`, `afs_local_context_search`,
+  `afs_local_context_read`, `afs_local_context_write`,
+  `afs_local_context_list`, `afs_local_messages_send`,
+  `afs_local_messages_read`, `afs_local_note_create`, `afs_local_note_read`,
+  `afs_local_note_list`, `afs_local_handoff_create`, `afs_local_handoff_read`,
+  and `afs_local_handoff_list`.
+- Route work preflight, verification, handoff lifecycle, refresh, repair, and
+  session pack flows through slash commands or the AFS CLI unless the session
+  was explicitly launched with the full AFS MCP catalog.
 - Prefer `afs_local_context_read` and `afs_local_context_write` for scratchpad
   and other `.context` file work. The older `afs_local_fs_read` and
   `afs_local_fs_write` names remain compatible aliases.
@@ -42,7 +46,7 @@ scratchpad, handoffs, tasks, knowledge lookup, or AFS migration choices.
   current project namespace. Absolute paths under the CLI-resolved root remain
   the v1 compatibility convention. The plugin converts old `.context/...`
   spellings without making them cross project boundaries.
-- Do not assume full-catalog coordination, task, handoff, memory,
+- Do not assume full-catalog coordination, task, handoff lifecycle, memory,
   `afs_local_context_diff`, or
   `afs_local_context_freshness` exist in normal hcode sessions. Use slash
   commands or the AFS CLI unless a full-catalog session was requested.

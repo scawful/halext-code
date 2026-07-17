@@ -103,7 +103,7 @@ describe("plugin.afs-context", () => {
     expect(out.args.context_path).toBe(ctx)
   })
 
-  test.skipIf(process.platform === "win32")("injects the registered v2 scope into canonical slim tools", async () => {
+  test.skipIf(process.platform === "win32")("injects the registered v2 scope into scoped AFS tools", async () => {
     await using tmp = await tmpdir()
     const context = join(tmp.path, "central-context")
     const bin = join(tmp.path, "afs")
@@ -132,13 +132,31 @@ console.log(JSON.stringify({
       "afs_local_note_read",
       "afs_local_note_list",
       "afs_local_handoff_create",
+      "afs_local_handoff_revise",
       "afs_local_handoff_read",
       "afs_local_handoff_list",
+      "afs_local_handoff_threads",
+      "afs_local_handoff_ack",
+      "afs_local_handoff_close",
     ]) {
       const out = { args: {} as Record<string, unknown> }
       await plugin["tool.execute.before"]?.({ tool } as any, out as any)
       expect(out.args.context_path).toBe(context)
       expect(out.args.project_path).toBe(tmp.path)
+    }
+
+    for (const tool of [
+      "afs_local_fs_read",
+      "afs_local_fs_write",
+      "afs_local_fs_delete",
+      "afs_local_fs_move",
+      "afs_local_fs_list",
+    ]) {
+      const out = { args: { path: ".context/scratchpad/note.md" } as Record<string, unknown> }
+      await plugin["tool.execute.before"]?.({ tool } as any, out as any)
+      expect(out.args.project_path).toBe(tmp.path)
+      expect(out.args.context_path).toBe(context)
+      expect(out.args.path).toBe("scratchpad/note.md")
     }
   })
 

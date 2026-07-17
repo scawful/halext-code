@@ -28,8 +28,10 @@ TypeScript rewrite.
 - Short aliases cover the common daily paths: `/start`, `/find`, `/check`,
   `/ship`, `/reply`, `/handoff`, `/fixafs`, and `/setupafs`.
 - The default Python AFS MCP catalog is intentionally slim: `context.status`,
-  `context.query`, `context.read`, `context.write`, `context.list`,
-  `skill.match`, and `skill.read`.
+  `context.query`, `context.search`, `context.read`, `context.write`,
+  `context.list`, `skill.match`, `skill.read`, `messages.send`,
+  `messages.read`, `note.create`, `note.read`, `note.list`, `handoff.create`,
+  `handoff.read`, and `handoff.list`.
   Heavier AFS behavior is reached through CLI/framework hints or an explicit
   full-catalog AFS server.
 - Project-local guidance lives in `.opencode/skills/halext-afs/SKILL.md`.
@@ -187,7 +189,8 @@ into your global OpenCode agent directory.
 ## Next steps
 
 1. Exercise the new slash-command flow in real stock-opencode sessions.
-2. Keep `scripts/afs-hcode-smoke` green as the provider-free integration check.
+2. Keep `scripts/afs-hcode-smoke` green as the provider-free integration check;
+   it creates and removes an isolated home, project, and central v2 context.
 3. Extend wrapper coverage only if another AFS tool still needs explicit
    repo-root defaults.
 4. Identify the smallest additional plugin or agent-layer additions still
