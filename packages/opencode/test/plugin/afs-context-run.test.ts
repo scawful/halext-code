@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { join } from "path"
-import { run } from "../../../../.opencode/plugins/afs-context/lib"
+import { cleanupWindowsTargets, run, WINDOWS_CHILD_LIMIT } from "../../../../.opencode/plugins/afs-context/lib"
 import { tmpdir } from "../fixture/fixture"
 
 function processIsAlive(pid: number) {
@@ -13,6 +13,30 @@ function processIsAlive(pid: number) {
 }
 
 describe("plugin.afs-context bounded runner", () => {
+  test("resolves the native Windows process snapshot helper from the plugin", () => {
+    const pluginDir = join(import.meta.dir, "../../../../.opencode/plugins/afs-context")
+    expect(Bun.resolveSync("@vscode/windows-process-tree", pluginDir)).toContain("@vscode/windows-process-tree")
+  })
+
+  test("bounds Windows descendant cleanup without concurrent taskkill fan-out", async () => {
+    const targets = Array.from({ length: WINDOWS_CHILD_LIMIT + 2 }, (_, index) => index + 1)
+    const seen: number[] = []
+    let active = 0
+    let maxActive = 0
+    const result = await cleanupWindowsTargets(targets, async (pid) => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      await Bun.sleep(1)
+      seen.push(pid)
+      active -= 1
+      return true
+    })
+
+    expect(result).toBe("error")
+    expect(seen).toEqual(targets.slice(0, WINDOWS_CHILD_LIMIT))
+    expect(maxActive).toBe(1)
+  })
+
   test("captures successful output without a shell", async () => {
     const text = await run([process.execPath, "-e", 'console.log("grounded")'], {
       timeout: process.platform === "win32" ? 10_000 : 2_000,
