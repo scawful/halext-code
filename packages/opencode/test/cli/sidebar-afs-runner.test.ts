@@ -3,6 +3,7 @@ import { join } from "node:path"
 import {
   cleanupWindowsTargets,
   run,
+  terminateWindowsTargets,
   WINDOWS_TASKKILL_BATCH,
   WINDOWS_TASKKILL_CONCURRENCY,
   windowsDescendants,
@@ -83,6 +84,53 @@ describe("sidebar AFS runner", () => {
     expect(seen.toSorted((left, right) => left - right)).toEqual(targets)
     expect(launches).toBe(Math.ceil(targets.length / WINDOWS_TASKKILL_BATCH))
     expect(maxActive).toBeLessThanOrEqual(WINDOWS_TASKKILL_CONCURRENCY)
+  })
+
+  test("bounds each Windows batch without leaving an unattempted tail", async () => {
+    const targets = Array.from(
+      { length: WINDOWS_TASKKILL_BATCH * WINDOWS_TASKKILL_CONCURRENCY + 1 },
+      (_, index) => index + 1,
+    )
+    const launches: number[][] = []
+    const result = await cleanupWindowsTargets(
+      targets,
+      async (pids) => {
+        launches.push(pids)
+        return new Promise<boolean>(() => {})
+      },
+      10,
+    )
+    const countAtReturn = launches.length
+
+    expect(result).toBe("error")
+    expect(launches.flat().toSorted((left, right) => left - right)).toEqual(targets)
+    await Bun.sleep(25)
+    expect(launches).toHaveLength(countAtReturn)
+  })
+
+  test("snapshots Windows ancestry before killing the root and draining survivors", async () => {
+    const order: string[] = []
+    const result = await terminateWindowsTargets(
+      10,
+      async () => {
+        order.push("snapshot")
+        return [20, 30]
+      },
+      async (pids, tree) => {
+        expect(pids).toEqual([10])
+        expect(tree).toBeTrue()
+        order.push("root")
+        return true
+      },
+      async (targets) => {
+        expect(targets).toEqual([20, 30])
+        order.push("drain")
+        return "descendants"
+      },
+    )
+
+    expect(result).toBe("descendants")
+    expect(order).toEqual(["snapshot", "root", "drain"])
   })
 
   test("captures successful output without a shell", async () => {
