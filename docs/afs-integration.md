@@ -25,6 +25,9 @@ TypeScript rewrite.
   vocabulary, plus `/afs-brief`, `/afs-help`, `/afs-review-context`,
   `/afs-work-preflight`, `/afs-verify`, `/afs-insights`, `/afs-refresh`,
   `/afs-pack`, and `/afs-update-work` flows.
+  `/afs-approvals` and `/afs-missions` keep agent-side use read-only; guarded
+  approval and mission writes are rendered as exact commands for the human's
+  controlling terminal instead of being executed by hcode.
 - Short aliases cover the common daily paths: `/start`, `/find`, `/check`,
   `/ship`, `/reply`, `/handoff`, `/fixafs`, and `/setupafs`.
 - The default Python AFS MCP catalog is intentionally slim: `context.status`,

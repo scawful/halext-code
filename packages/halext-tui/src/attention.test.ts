@@ -80,6 +80,17 @@ describe("AFS attention", () => {
     })
   })
 
+  test("clears only the attention-owned error when the visible path changes", () => {
+    expect(refreshError("Old path unavailable", "Old path unavailable", "", "Health unavailable")).toEqual({
+      owned: "",
+      visible: "Health unavailable",
+    })
+    expect(refreshError("Old path unavailable", "Prompt failed", "", "Health unavailable")).toEqual({
+      owned: "",
+      visible: "Prompt failed",
+    })
+  })
+
   test("restores another AFS error after a health error recovers", () => {
     const health = refreshError("", "", "Health unavailable")
     const attention = refreshError("", health.visible, "Attention unavailable")

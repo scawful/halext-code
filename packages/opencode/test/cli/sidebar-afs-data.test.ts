@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { resolve } from "node:path"
-import { approvals, COUNT, missions, project, snapshot } from "../../src/cli/cmd/tui/routes/session/sidebar-afs-data"
+import {
+  approvals,
+  COUNT,
+  missions,
+  MISSION_TITLE_LIMIT,
+  project,
+  safeDisplayText,
+  snapshot,
+} from "../../src/cli/cmd/tui/routes/session/sidebar-afs-data"
 
 describe("sidebar AFS data", () => {
   test("accepts only a registered central-context project", () => {
@@ -61,6 +69,17 @@ describe("sidebar AFS data", () => {
         { mission_id: "blocked", title: "Blocked", status: "blocked", next_steps: [] },
       ])?.map((mission) => mission.mission_id),
     ).toEqual(["blocked", "one", "two"])
+  })
+
+  test("bounds and control-sanitizes mission titles for terminal display", () => {
+    const title = `${"A".repeat(MISSION_TITLE_LIMIT)}\u202ehidden`
+    const parsed = missions([{ mission_id: "one", title, status: "active", next_steps: [] }])?.[0]
+
+    expect(parsed).toBeDefined()
+    expect(Array.from(parsed!.title)).toHaveLength(MISSION_TITLE_LIMIT)
+    expect(parsed!.title.endsWith("…")).toBeTrue()
+    expect(parsed!.title).not.toContain("\u202e")
+    expect(safeDisplayText("line\u000anext")).toBe("line\\u000anext")
   })
 
   test("validates and caps pending approval counts", () => {

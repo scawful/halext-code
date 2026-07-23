@@ -73,15 +73,17 @@ terminal: sessions, timeline, and a live AFS lane side by side.
 - Layout: Sessions rail | Timeline | AFS lane (shown when the terminal is at
   least 128 columns wide)
 - AFS lane shows: index status, phase, MCP servers, open tasks, latest
-  handoff, active missions, pending approvals, and an optional pack preview
+  handoff, active missions, machine-global agent approvals, and an optional
+  pack preview
 - Keys: `j/k` select session, `i` compose, `n` new session, `r` refresh,
   `p` pack preview, `h` AFS health check, `q` quit
 - Palette: derived from `.opencode/themes/hcode-ghostty.json` at build time;
   focused tests keep its key colors aligned with the separate Ghostty profile
 
-The approvals section is display-only. Resolving an approval stays a
-deliberate CLI step (`afs approvals approve|reject`) on explicit user
-direction, never a cockpit shortcut.
+The approvals section is display-only and shows machine-global agent
+approvals, not project work approvals. Resolving one stays a deliberate CLI
+step (`afs approvals approve|reject`) in the human's controlling terminal on
+explicit direction, never a cockpit or hcode-agent shortcut.
 
 ## 4) Halext Bridge (AFS read-model API)
 
@@ -98,13 +100,15 @@ stable AFS read endpoints.
 - `GET /api/summary` (AFS bootstrap summary)
 - `GET /api/session/pack` (session-pack preview)
 - `GET /api/missions` (durable missions; `status`/`limit`/`path` filters)
-- `GET /api/approvals` (approval requests; optional `status` filter)
+- `GET /api/approvals` (machine-global agent approval requests; optional
+  `status` filter; distinct from project-scoped work approvals)
 - `GET /api/health` (AFS system health check via `afs health status`)
 - `GET /api/fs/list` (root-scoped file tree)
 - `GET /api/fs/read` (root-scoped file preview)
 
-Bridge endpoints are read-only by design. Mutating flows (approving
-requests, updating missions) intentionally stay in the AFS CLI.
+Bridge endpoints are read-only by design. Mutating flows (approving requests,
+creating/updating missions) intentionally stay in the AFS CLI and must be run
+by the human in their controlling terminal when the CLI asks for confirmation.
 
 ## 5) Theme + terminal profile entrypoint
 

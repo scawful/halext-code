@@ -30,7 +30,8 @@ Then mention the small project wrappers that add hcode-specific policy:
 - `/afs-review-context` for context health and drift review
 - `/afs-work-preflight` before work-facing writing
 - `/afs-verify` before calling a code change done
-- `/afs-approvals` for pending requests; resolve only on explicit human direction
+- `/afs-approvals` for machine-global agent requests; guarded decisions run
+  only in the human's controlling terminal
 - `/afs-schema` for structured-response validation
 - `/afs-optimize` for deterministic evidence review, never automatic promotion
 - `/afs-insights` for scoped research, deterministic reflection, and human-only

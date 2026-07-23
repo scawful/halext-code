@@ -152,6 +152,15 @@ if ! grep -Fq -- '--skeleton <human-plan.json>' "$ROOT/.opencode/agent/afs-plann
   echo "planner must validate human_intent against the supplied skeleton" >&2
   exit 1
 fi
+if ! grep -Fq "must never run \`approvals approve\` or \`approvals reject\`" \
+  "$ROOT/.opencode/command/afs-approvals.md"; then
+  echo "approval writes must stay in the human controlling terminal" >&2
+  exit 1
+fi
+if ! grep -Fq "Do not execute it from the agent" "$ROOT/.opencode/command/afs-missions.md"; then
+  echo "mission writes must stay in the human controlling terminal" >&2
+  exit 1
+fi
 if grep -RqsF 'scratchpad/handoffs' "$ROOT/.opencode/agent"; then
   echo "AFS agents must use immutable handoff flows instead of ad-hoc scratchpad files" >&2
   exit 1

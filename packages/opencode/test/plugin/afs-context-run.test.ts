@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { join } from "path"
-import { cleanupWindowsTargets, run, WINDOWS_CHILD_LIMIT } from "../../../../.opencode/plugins/afs-context/lib"
+import {
+  cleanupWindowsTargets,
+  run,
+  terminateWindowsTargets,
+  WINDOWS_TASKKILL_BATCH,
+  WINDOWS_TASKKILL_CONCURRENCY,
+  windowsDescendants,
+} from "../../../../.opencode/plugins/afs-context/lib"
 import { tmpdir } from "../fixture/fixture"
 
 function processIsAlive(pid: number) {
@@ -18,23 +25,87 @@ describe("plugin.afs-context bounded runner", () => {
     expect(Bun.resolveSync("@vscode/windows-process-tree", pluginDir)).toBeTruthy()
   })
 
-  test("bounds Windows descendant cleanup without concurrent taskkill fan-out", async () => {
-    const targets = Array.from({ length: WINDOWS_CHILD_LIMIT + 2 }, (_, index) => index + 1)
+  test("captures the full Windows descendant tree", () => {
+    expect(
+      windowsDescendants(
+        [
+          { pid: 10, ppid: 1 },
+          { pid: 20, ppid: 10 },
+          { pid: 30, ppid: 20 },
+          { pid: 40, ppid: 99 },
+        ],
+        1,
+      ),
+    ).toEqual([10, 20, 30])
+  })
+
+  test("attempts every bounded Windows target in capped batches", async () => {
+    const targets = Array.from({ length: 1_023 }, (_, index) => index + 1)
     const seen: number[] = []
     let active = 0
     let maxActive = 0
-    const result = await cleanupWindowsTargets(targets, async (pid) => {
+    let launches = 0
+    const result = await cleanupWindowsTargets(targets, async (pids) => {
       active += 1
       maxActive = Math.max(maxActive, active)
+      launches += 1
       await Bun.sleep(1)
-      seen.push(pid)
+      seen.push(...pids)
       active -= 1
       return true
     })
 
+    expect(result).toBe("descendants")
+    expect(seen.toSorted((left, right) => left - right)).toEqual(targets)
+    expect(launches).toBe(Math.ceil(targets.length / WINDOWS_TASKKILL_BATCH))
+    expect(maxActive).toBeLessThanOrEqual(WINDOWS_TASKKILL_CONCURRENCY)
+  })
+
+  test("bounds each Windows batch without leaving an unattempted tail", async () => {
+    const targets = Array.from(
+      { length: WINDOWS_TASKKILL_BATCH * WINDOWS_TASKKILL_CONCURRENCY + 1 },
+      (_, index) => index + 1,
+    )
+    const launches: number[][] = []
+    const result = await cleanupWindowsTargets(
+      targets,
+      async (pids) => {
+        launches.push(pids)
+        return new Promise<boolean>(() => {})
+      },
+      10,
+    )
+    const countAtReturn = launches.length
+
     expect(result).toBe("error")
-    expect(seen).toEqual(targets.slice(0, WINDOWS_CHILD_LIMIT))
-    expect(maxActive).toBe(1)
+    expect(launches.flat().toSorted((left, right) => left - right)).toEqual(targets)
+    await Bun.sleep(25)
+    expect(launches).toHaveLength(countAtReturn)
+  })
+
+  test("snapshots Windows ancestry before killing the root and draining survivors", async () => {
+    const order: string[] = []
+    const result = await terminateWindowsTargets(
+      10,
+      async () => {
+        order.push("snapshot")
+        return [20, 30]
+      },
+      async (pids, tree) => {
+        expect(pids).toEqual([10])
+        expect(tree).toBeTrue()
+        order.push("root")
+        return true
+      },
+      async (targets) => {
+        expect(targets).toEqual([20, 30])
+        order.push("drain")
+        return "descendants"
+      },
+    )
+
+    expect(result).toBe("descendants")
+    expect(order).toEqual(["snapshot", "root", "drain"])
   })
 
   test("captures successful output without a shell", async () => {

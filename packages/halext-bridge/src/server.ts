@@ -15,8 +15,13 @@ const MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 const WINDOWS_NATIVE_TIMEOUT = 1_000
 const WINDOWS_SHELL_TIMEOUT = 7_000
 const WINDOWS_PROCESS_LIMIT = 1_024
+const WINDOWS_TASKKILL_TIMEOUT = 1_000
+const WINDOWS_BATCH_TIMEOUT = 1_250
+export const WINDOWS_TASKKILL_BATCH = 128
+export const WINDOWS_TASKKILL_CONCURRENCY = 4
 const children = new Set<ChildProcess>()
 const cleanupTasks = new Set<Promise<unknown>>()
+const windowsSnapshots = new WeakMap<ChildProcess, Promise<number[]>>()
 const windowsCleanups = new WeakMap<ChildProcess, Promise<DescendantCleanup>>()
 
 type DescendantCleanup = "clean" | "descendants" | "error"
@@ -198,7 +203,28 @@ function trackedCleanup<T>(task: Promise<T>) {
   return task
 }
 
-async function directWindowsChildren(parentPid: number) {
+export function windowsDescendants(items: ReadonlyArray<{ pid: number; ppid: number }>, parentPid: number) {
+  const byParent = new Map<number, number[]>()
+  for (const item of items) {
+    const children = byParent.get(item.ppid)
+    if (children) children.push(item.pid)
+    else byParent.set(item.ppid, [item.pid])
+  }
+  const seen = new Set([parentPid])
+  const pending = [parentPid]
+  const targets: number[] = []
+  for (let index = 0; index < pending.length; index += 1) {
+    for (const pid of byParent.get(pending[index]!) ?? []) {
+      if (seen.has(pid)) continue
+      seen.add(pid)
+      pending.push(pid)
+      targets.push(pid)
+    }
+  }
+  return targets
+}
+
+async function windowsChildren(parentPid: number) {
   if (process.arch === "x64") {
     try {
       return await new Promise<number[]>((resolve, reject) => {
@@ -222,7 +248,7 @@ async function directWindowsChildren(parentPid: number) {
                 finish(new Error("Windows process snapshot was empty or truncated"))
                 return
               }
-              finish(items.filter((item) => item.ppid === parentPid).map((item) => item.pid))
+              finish(windowsDescendants(items, parentPid))
             })
           })
           .catch((error) => finish(error instanceof Error ? error : new Error(String(error))))
@@ -233,8 +259,7 @@ async function directWindowsChildren(parentPid: number) {
   // The Microsoft native addon currently ships x64 only. Keep ARM64 and
   // native-load failures fail-closed with a bounded system-CIM fallback.
   const script = `$ErrorActionPreference = 'Stop'
-$self = [uint32]$PID
-Get-CimInstance -Query "SELECT ProcessId,ParentProcessId FROM Win32_Process WHERE ProcessId = $self OR ParentProcessId = ${parentPid}" |
+Get-CimInstance -Query "SELECT ProcessId,ParentProcessId FROM Win32_Process" |
   ForEach-Object { [Console]::Out.WriteLine(('{0}:{1}' -f [uint32]$_.ProcessId, [uint32]$_.ParentProcessId)) }`
   return new Promise<number[]>((resolve, reject) => {
     let child: ChildProcess | undefined
@@ -301,7 +326,16 @@ Get-CimInstance -Query "SELECT ProcessId,ParentProcessId FROM Win32_Process WHER
           finish(new Error("Windows process snapshot output was invalid"))
           return
         }
-        finish(rows.filter((row) => Number(row?.[2]) === parentPid).map((row) => Number(row?.[1])))
+        if (rows.length >= WINDOWS_PROCESS_LIMIT) {
+          finish(new Error("Windows process snapshot was truncated"))
+          return
+        }
+        finish(
+          windowsDescendants(
+            rows.map((row) => ({ pid: Number(row?.[1]), ppid: Number(row?.[2]) })),
+            parentPid,
+          ),
+        )
       })
     }
     const timer = setTimeout(() => {
@@ -315,11 +349,11 @@ Get-CimInstance -Query "SELECT ProcessId,ParentProcessId FROM Win32_Process WHER
   })
 }
 
-function launchTaskkill(pid: number) {
+function launchTaskkill(pids: number[], tree = false) {
   return new Promise<boolean>((resolve) => {
     let child: ChildProcess
     try {
-      child = spawn("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+      child = spawn("taskkill.exe", [...pids.flatMap((pid) => ["/PID", String(pid)]), ...(tree ? ["/T"] : []), "/F"], {
         stdio: "ignore",
         windowsHide: true,
       })
@@ -341,10 +375,35 @@ function launchTaskkill(pid: number) {
         child.unref()
         finish(false)
       }
-    }, 1_000)
+    }, WINDOWS_TASKKILL_TIMEOUT)
     child.once("close", (code) => finish(code === 0))
     child.once("error", () => finish(false))
   })
+}
+
+async function boundedWindowsAttempt(attempt: () => Promise<boolean>, timeoutMs: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs)
+  })
+  try {
+    return await Promise.race([
+      Promise.resolve()
+        .then(attempt)
+        .catch(() => false),
+      deadline,
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+function snapshotWindowsDescendants(proc: ChildProcess, pid: number) {
+  const existing = windowsSnapshots.get(proc)
+  if (existing) return existing
+  const snapshot = windowsChildren(pid)
+  windowsSnapshots.set(proc, snapshot)
+  return snapshot
 }
 
 function cleanupWindowsDescendants(proc: ChildProcess, pid: number): Promise<DescendantCleanup> {
@@ -353,35 +412,87 @@ function cleanupWindowsDescendants(proc: ChildProcess, pid: number): Promise<Des
   const task = (async (): Promise<DescendantCleanup> => {
     let targets: number[]
     try {
-      targets = await directWindowsChildren(pid)
+      targets = await snapshotWindowsDescendants(proc, pid)
     } catch {
       return "error"
     }
     if (targets.length === 0) return "clean"
-    const killed = await Promise.all(targets.map(launchTaskkill))
-    return killed.every(Boolean) ? "descendants" : "error"
+    return cleanupWindowsTargets(targets)
   })()
   const tracked = trackedCleanup(task)
   windowsCleanups.set(proc, tracked)
   return tracked
 }
 
-function terminateWindows(proc: ChildProcess, pid: number) {
-  void trackedCleanup(launchTaskkill(pid))
+export async function cleanupWindowsTargets(
+  targets: number[],
+  kill: (pids: number[]) => Promise<boolean> = launchTaskkill,
+  attemptTimeoutMs = WINDOWS_BATCH_TIMEOUT,
+): Promise<DescendantCleanup> {
+  if (targets.length === 0) return "clean"
+  if (
+    targets.length >= WINDOWS_PROCESS_LIMIT ||
+    targets.some((pid) => !Number.isSafeInteger(pid) || pid <= 0) ||
+    new Set(targets).size !== targets.length
+  )
+    return "error"
 
-  // A direct parent can exit while a descendant keeps an inherited pipe
-  // open. taskkill cannot root a tree at that dead PID, so also discover
-  // surviving descendants from their recorded ParentProcessId values. This
-  // remains best-effort: a static snapshot cannot recover a deeper chain when
-  // an intermediate parent already exited.
-  const cleanup = cleanupWindowsDescendants(proc, pid)
-  const timer = setTimeout(() => {
+  const timeoutMs = Math.max(1, Math.min(WINDOWS_BATCH_TIMEOUT, Math.floor(attemptTimeoutMs)))
+  const batches = Array.from({ length: Math.ceil(targets.length / WINDOWS_TASKKILL_BATCH) }, (_, index) =>
+    targets.slice(index * WINDOWS_TASKKILL_BATCH, (index + 1) * WINDOWS_TASKKILL_BATCH),
+  )
+  let next = 0
+  let killed = true
+  const work = async () => {
+    while (next < batches.length) {
+      const batch = batches[next++]
+      if (!batch) return
+      killed = (await boundedWindowsAttempt(() => kill(batch), timeoutMs)) && killed
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(WINDOWS_TASKKILL_CONCURRENCY, batches.length) }, work))
+  return killed && next === batches.length ? "descendants" : "error"
+}
+
+export async function terminateWindowsTargets(
+  pid: number,
+  snapshot: (pid: number) => Promise<number[]> = windowsChildren,
+  killRoot: (pids: number[], tree?: boolean) => Promise<boolean> = launchTaskkill,
+  drain: (targets: number[]) => Promise<DescendantCleanup> = cleanupWindowsTargets,
+): Promise<DescendantCleanup> {
+  let targets: number[] | undefined
+  try {
+    targets = await snapshot(pid)
+  } catch {}
+
+  const rootKilled = await boundedWindowsAttempt(() => killRoot([pid], true), WINDOWS_BATCH_TIMEOUT)
+  if (!targets) return "error"
+  if (targets.length === 0) return rootKilled ? "clean" : "error"
+
+  let drained: DescendantCleanup
+  try {
+    drained = await drain(targets)
+  } catch {
+    drained = "error"
+  }
+  return rootKilled && drained === "descendants" ? "descendants" : "error"
+}
+
+function terminateWindows(proc: ChildProcess, pid: number) {
+  const existing = windowsCleanups.get(proc)
+  if (existing) return existing
+  // Capture the full tree before taskkill can destroy the ancestry needed to
+  // identify an orphaned grandchild, then kill the root tree and drain every
+  // PID from that immutable snapshot.
+  const task = terminateWindowsTargets(pid, () => snapshotWindowsDescendants(proc, pid)).then((result) => {
     try {
       proc.kill("SIGKILL")
     } catch {}
-  }, 1_000)
-  timer.unref()
-  return cleanup
+    return result
+  })
+  const tracked = trackedCleanup(task)
+  windowsCleanups.set(proc, tracked)
+  return tracked
 }
 
 function cleanupUnixProcessGroup(pid: number): DescendantCleanup {
@@ -437,7 +548,7 @@ function closed(proc: ChildProcess, timeoutMs: number) {
   })
 }
 
-export async function shutdownAfsProcesses(timeoutMs = 2_000) {
+export async function shutdownAfsProcesses(timeoutMs = process.platform === "win32" ? 13_000 : 2_000) {
   const active = [...children]
   const closing = active.map((proc) => closed(proc, timeoutMs))
   const cleanup = active.map(terminate)
@@ -688,14 +799,7 @@ export const BridgeApp = new Hono()
   })
   .get("/api/missions", async (c) => {
     const query = MissionQuerySchema.parse(c.req.query())
-    const args = [
-      "list",
-      "--json",
-      "--path",
-      resolveProjectPath(query.path),
-      "--limit",
-      String(query.limit ?? 20),
-    ]
+    const args = ["list", "--json", "--path", resolveProjectPath(query.path), "--limit", String(query.limit ?? 20)]
     if (query.status) args.push("--status", query.status)
     const options = { timeoutMs: 10000, signal: c.req.raw.signal }
     const missions = validate(

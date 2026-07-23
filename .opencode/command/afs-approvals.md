@@ -1,8 +1,9 @@
 ---
-description: inspect and resolve pending AFS approval requests
+description: inspect global agent approvals and prepare human terminal commands
 ---
 
-Inspect pending AFS approval requests for this workspace.
+Inspect machine-global AFS agent approval requests. This command is read-only
+inside hcode.
 
 Request: `$ARGUMENTS`
 
@@ -14,16 +15,17 @@ Rules:
 
 - Session grounding may already mention pending approvals; use this command to
   see the full request detail before acting.
-- Approve or reject ONLY when the user explicitly directs it for the exact
-  `(agent, action)` pair shown by the listing:
+- When the user explicitly directs approval or rejection for an exact
+  `(agent, action)` pair, prepare the command for the human to run in their
+  controlling terminal. Do not execute the guarded write from the agent:
 
   First inspect the installed CLI contract:
 
   `"${AFS_BIN:-${AFS_CLI:-afs}}" approvals approve --help`
   `"${AFS_BIN:-${AFS_CLI:-afs}}" approvals reject --help`
 
-  Require `--because`. Ask the human for the exact rationale and pass it before
-  the positional pair:
+  Require `--because`. Ask the human for the exact rationale and place it
+  before the positional pair:
 
   `"${AFS_BIN:-${AFS_CLI:-afs}}" approvals approve --because "<human rationale>" -- <agent> <action>`
   `"${AFS_BIN:-${AFS_CLI:-afs}}" approvals reject --because "<human rationale>" -- <agent> <action>`
@@ -31,6 +33,11 @@ Rules:
   If the installed CLI does not expose `--because`, stop and report that AFS
   must be updated. Never downgrade the gate, and never invent, infer, or
   paraphrase a human rationale.
+
+  Return the fully expanded, safely quoted terminal command and say plainly:
+  `Run this in your terminal to confirm the guarded decision.` The hcode agent
+  must never run `approvals approve` or `approvals reject`; AFS requires the
+  human's controlling terminal and typed confirmation.
 
 - Never approve a request as a side effect of another task, and never approve
   your own agent's outward-facing action; that defeats the gate.
@@ -41,5 +48,6 @@ Rules:
   `"${AFS_BIN:-${AFS_CLI:-afs}}" approvals history --json`.
 - Do not assume an `approvals.*` MCP tool exists; this flow is CLI-only.
 
-Return: pending requests (agent, action, detail), what — if anything — was
-resolved on explicit user instruction, and what remains blocked.
+Return: pending global agent requests (agent, action, detail), the exact human
+terminal command when requested, and what remains blocked. Never claim that an
+approval was resolved unless a later read-only listing/history check proves it.

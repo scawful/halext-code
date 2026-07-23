@@ -1,4 +1,34 @@
 export const DEFAULT_BRIDGE_URL = "http://127.0.0.1:4319"
+export const DISPLAY_TEXT_LIMIT = 512
+export const MISSION_TITLE_LIMIT = 160
+const CONTROL = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u
+
+export function safeDisplayText(value: string, max = DISPLAY_TEXT_LIMIT) {
+  if (max < 2) return ""
+  const output: string[] = []
+  let size = 0
+  let truncated = false
+  for (const char of Array.from(value)) {
+    const point = char.codePointAt(0)!
+    const token = CONTROL.test(char)
+      ? point <= 0xffff
+        ? `\\u${point.toString(16).padStart(4, "0")}`
+        : `\\u{${point.toString(16)}}`
+      : char
+    const width = Array.from(token).length
+    if (size + width > max) {
+      truncated = true
+      break
+    }
+    output.push(token)
+    size += width
+  }
+  if (!truncated) return output.join("")
+  while (output.length > 0 && size + 1 > max) {
+    size -= Array.from(output.pop()!).length
+  }
+  return `${output.join("")}…`
+}
 
 export type AfsTask = {
   id: string
@@ -352,12 +382,28 @@ function score(value: unknown): value is AfsHealthScore {
 
 export function parseMissions(value: unknown): AfsMission[] {
   if (!Array.isArray(value) || !value.every(mission)) throw new Error("Bridge returned an invalid missions payload")
-  return value
+  return value.map((item) => ({
+    ...item,
+    title: safeDisplayText(item.title, MISSION_TITLE_LIMIT),
+    summary: safeDisplayText(item.summary),
+    owner: safeDisplayText(item.owner, MISSION_TITLE_LIMIT),
+    acceptance: item.acceptance === undefined ? undefined : safeDisplayText(item.acceptance),
+    next_steps: item.next_steps.map((step) => safeDisplayText(step)),
+    blockers: item.blockers.map((blocker) => safeDisplayText(blocker)),
+    tags: item.tags.map((tag) => safeDisplayText(tag, MISSION_TITLE_LIMIT)),
+  }))
 }
 
 export function parseApprovals(value: unknown): AfsApproval[] {
   if (!Array.isArray(value) || !value.every(approval)) throw new Error("Bridge returned an invalid approvals payload")
-  return value
+  return value.map((item) => ({
+    ...item,
+    agent: safeDisplayText(item.agent, MISSION_TITLE_LIMIT),
+    action: safeDisplayText(item.action, MISSION_TITLE_LIMIT),
+    detail: safeDisplayText(item.detail),
+    reviewed_by: safeDisplayText(item.reviewed_by, MISSION_TITLE_LIMIT),
+    rationale: item.rationale === undefined ? undefined : safeDisplayText(item.rationale),
+  }))
 }
 
 export function parseHealth(value: unknown): AfsHealthSummary {
@@ -438,7 +484,7 @@ async function requestJson(baseUrl: string, pathname: string, params: RequestPar
       payload = JSON.parse(text)
     } catch {
       if (!response.ok) {
-        throw new Error(text)
+        throw new Error(safeDisplayText(text))
       }
       throw new Error("Bridge returned non-JSON output")
     }
@@ -446,7 +492,7 @@ async function requestJson(baseUrl: string, pathname: string, params: RequestPar
 
   if (!response.ok) {
     if (payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string") {
-      throw new Error(payload.error)
+      throw new Error(safeDisplayText(payload.error))
     }
     throw new Error(`${response.status} ${response.statusText}`)
   }
