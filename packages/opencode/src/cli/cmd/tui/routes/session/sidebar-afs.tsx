@@ -4,9 +4,9 @@ import { useSync } from "../../context/sync"
 import { approvals, BYTES, missions, project, snapshot, type Snapshot } from "./sidebar-afs-data"
 import { run } from "./sidebar-afs-runner"
 
-// Fork-owned AFS sidebar section. Reads project-management signals (open
-// missions, pending approvals) straight from the AFS CLI so it works without
-// the halext bridge running. Renders only when AFS resolves a registered v2
+// Fork-owned AFS sidebar section. Reads project missions and machine-global
+// agent approvals straight from the AFS CLI so it works without the halext
+// bridge running. Renders only when AFS resolves a registered v2
 // project or an explicit v1 compatibility context for the current directory.
 
 const REFRESH_MS = 120_000
@@ -126,8 +126,8 @@ export function SidebarAfs() {
             </text>
             <text fg={theme.text} wrapMode="word">
               {pending().count}
-              {pending().capped ? "+" : ""} approval{pending().count === 1 ? "" : "s"} pending{" "}
-              <span style={{ fg: theme.textMuted }}>resolve via afs approvals</span>
+              {pending().capped ? "+" : ""} global agent approval{pending().count === 1 ? "" : "s"} pending{" "}
+              <span style={{ fg: theme.textMuted }}>review via afs approvals</span>
             </text>
           </box>
         </Show>

@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { createHalextBridgeClient, parseApprovals, parseHealth, parseMissions, parsePack, parseSummary } from "./index"
+import {
+  createHalextBridgeClient,
+  DISPLAY_TEXT_LIMIT,
+  MISSION_TITLE_LIMIT,
+  parseApprovals,
+  parseHealth,
+  parseMissions,
+  parsePack,
+  parseSummary,
+  safeDisplayText,
+} from "./index"
 
 const servers: Array<ReturnType<typeof Bun.serve>> = []
 
@@ -126,9 +136,38 @@ describe("bridge response validation", () => {
     await expect(client.getSummary()).rejects.toThrow("invalid summary payload")
     await expect(client.getPack()).rejects.toThrow("invalid session pack payload")
   })
+
+  test("bounds and control-sanitizes display fields at the bridge boundary", () => {
+    const title = `${"A".repeat(MISSION_TITLE_LIMIT)}\u001b[31m`
+    const detail = `${"B".repeat(DISPLAY_TEXT_LIMIT)}\u202ehidden`
+    const parsedMission = parseMissions([{ ...mission, title, next_steps: ["line\u000anext"] }])[0]!
+    const parsedApproval = parseApprovals([{ ...approval, agent: "worker\u001b", detail }])[0]!
+
+    expect(Array.from(parsedMission.title)).toHaveLength(MISSION_TITLE_LIMIT)
+    expect(parsedMission.title.endsWith("…")).toBeTrue()
+    expect(parsedMission.next_steps).toEqual(["line\\u000anext"])
+    expect(parsedApproval.agent).toBe("worker\\u001b")
+    expect(Array.from(parsedApproval.detail)).toHaveLength(DISPLAY_TEXT_LIMIT)
+    expect(parsedApproval.detail.endsWith("…")).toBeTrue()
+    expect(parsedApproval.detail).not.toContain("\u202e")
+    expect(safeDisplayText("safe")).toBe("safe")
+  })
 })
 
 describe("bridge request lifecycle", () => {
+  test("bounds and control-sanitizes server error summaries", async () => {
+    const detail = `${"x".repeat(DISPLAY_TEXT_LIMIT)}\u001b[31m`
+    const client = createHalextBridgeClient({
+      baseUrl: serve(() => Response.json({ error: detail }, { status: 502 })),
+    })
+
+    const error = await client.getMissions().catch((value) => value)
+    expect(error).toBeInstanceOf(Error)
+    expect(Array.from(error.message)).toHaveLength(DISPLAY_TEXT_LIMIT)
+    expect(error.message.endsWith("…")).toBeTrue()
+    expect(error.message).not.toContain("\u001b")
+  })
+
   test("aborts a request at the client timeout", async () => {
     const url = serve(async () => {
       await Bun.sleep(500)

@@ -1,5 +1,6 @@
 import {
   createHalextBridgeClient,
+  safeDisplayText,
   type AfsApproval,
   type AfsBootstrapSummary,
   type AfsContextPack,
@@ -29,6 +30,7 @@ import {
   type Attention,
   type AttentionRefresh,
 } from "./attention"
+import { explainError, shortenPath } from "./display"
 import { color } from "./theme"
 
 type HalextTuiAppProps = {
@@ -88,7 +90,7 @@ const palette = {
 function formatDate(timestamp?: number | string) {
   if (!timestamp) return "No timestamp"
   const value = typeof timestamp === "number" ? timestamp : Date.parse(timestamp)
-  if (Number.isNaN(value)) return String(timestamp)
+  if (Number.isNaN(value)) return safeDisplayText(String(timestamp), 160)
   return new Date(value).toLocaleString([], {
     month: "short",
     day: "numeric",
@@ -97,20 +99,13 @@ function formatDate(timestamp?: number | string) {
   })
 }
 
-function shortenPath(path?: string) {
-  if (!path) return "No path"
-  const segments = path.split("/").filter(Boolean)
-  return `/${segments.slice(-4).join("/")}`
-}
-
 function truncate(text: string, max = 180) {
   const normalized = text.replace(/\s+/g, " ").trim()
-  if (normalized.length <= max) return normalized
-  return `${normalized.slice(0, max - 1)}...`
+  return safeDisplayText(normalized, max)
 }
 
 function wrapText(text: string, width = 64, maxLines = 4) {
-  const normalized = text.replace(/\s+/g, " ").trim()
+  const normalized = safeDisplayText(text.replace(/\s+/g, " ").trim())
   if (!normalized) return []
   const words = normalized.split(" ")
   const lines: string[] = []
@@ -130,16 +125,6 @@ function wrapText(text: string, width = 64, maxLines = 4) {
     lines[maxLines - 1] = truncate(lines[maxLines - 1] ?? "", Math.max(12, width - 2))
   }
   return lines
-}
-
-function explainError(error: unknown) {
-  if (!error) return "Unknown server error"
-  if (typeof error === "string") return error
-  if (typeof error === "object" && error) {
-    if ("message" in error && typeof error.message === "string") return error.message
-    if ("detail" in error && typeof error.detail === "string") return error.detail
-  }
-  return JSON.stringify(error)
 }
 
 function summarizeMcpStatus(status: McpStatus) {
@@ -410,10 +395,10 @@ function Panel(props: ParentProps<{ title: string; subtitle?: string; width?: nu
     >
       <box flexDirection="column" paddingBottom={1}>
         <text fg={palette.accent} attributes={TextAttributes.BOLD}>
-          {props.title}
+          {truncate(props.title, 160)}
         </text>
         <Show when={props.subtitle}>
-          <text fg={palette.muted}>{props.subtitle}</text>
+          <text fg={palette.muted}>{truncate(props.subtitle!, 512)}</text>
         </Show>
       </box>
       <box flexDirection="column" flexGrow={1} minHeight={0} gap={1}>
@@ -514,6 +499,9 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       setAfsMissions([])
       setAfsApprovals([])
       setAfsAttention(path ? "unavailable" : "ready")
+      const state = refreshError(attentionError, errorText(), "", healthError)
+      attentionError = state.owned
+      if (state.visible !== errorText()) setErrorText(state.visible)
     }
     if (!path) {
       const state = refreshError(attentionError, errorText(), "", healthError)
@@ -898,7 +886,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
 
   createEffect(() => {
     const session = selectedSession()
-    renderer.setTerminalTitle(session ? `halext-tui · ${session.title}` : "halext-tui")
+    renderer.setTerminalTitle(session ? truncate(`halext-tui · ${session.title}`, 160) : "halext-tui")
   })
 
   createEffect(() => {
@@ -938,8 +926,8 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       <box flexDirection="row" paddingLeft={1} paddingRight={1} paddingTop={1} gap={2} flexShrink={0}>
         <text fg={sendingPrompt() || loadingWorkspace() || loadingMessages() || loadingPack() ? palette.warning : palette.success}>{busyLabel()}</text>
         <text fg={composerFocused() ? palette.accent : palette.muted}>{modeLabel()}</text>
-        <text fg={palette.muted}>{props.serverUrl}</text>
-        <text fg={palette.muted}>bridge {props.bridgeUrl}</text>
+        <text fg={palette.muted}>{truncate(props.serverUrl, 160)}</text>
+        <text fg={palette.muted}>{truncate(`bridge ${props.bridgeUrl}`, 160)}</text>
         <box flexGrow={1} />
         <text fg={palette.muted}>q quit</text>
         <text fg={palette.muted}>j/k select</text>
@@ -994,7 +982,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
                     {(block) => (
                       <box flexDirection="column" paddingLeft={1} paddingTop={1}>
                         <text fg={block.tone}>
-                          [{block.label}] {block.title}
+                          {truncate(`[${block.label}] ${block.title}`, 160)}
                         </text>
                         <For each={block.lines}>
                           {(line) => <text fg={palette.text}>{line}</text>}
@@ -1057,7 +1045,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
                   <For each={mcpEntries().slice(0, 4)}>
                     {(entry) => (
                       <text fg={mcpTone(entry.status)}>
-                        {entry.name}: {summarizeMcpStatus(entry.status)}
+                        {truncate(`${entry.name}: ${summarizeMcpStatus(entry.status)}`, 54)}
                       </text>
                     )}
                   </For>
@@ -1071,7 +1059,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
                   <For each={afsTasks()}>
                     {(task) => (
                       <text fg={palette.text}>
-                        {task.id}: {truncate(task.title, 34)}
+                        {truncate(`${task.id}: ${task.title}`, 36)}
                       </text>
                     )}
                   </For>
@@ -1083,7 +1071,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
                     <text fg={palette.accent} attributes={TextAttributes.BOLD}>
                       Handoff
                     </text>
-                    <text fg={palette.text}>{handoff().agent_name}</text>
+                    <text fg={palette.text}>{truncate(handoff().agent_name, 36)}</text>
                     <For each={(handoff().next_steps.length > 0 ? handoff().next_steps : handoff().accomplished).slice(0, 3)}>
                       {(line) => <text fg={palette.muted}>{truncate(line, 36)}</text>}
                     </For>
@@ -1129,14 +1117,14 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
             <Show when={afsApprovals().length > 0}>
               <box flexDirection="column" paddingTop={1}>
                 <text fg={palette.warning} attributes={TextAttributes.BOLD}>
-                  Approvals pending {afsApprovals().length}
+                  Global agent approvals {afsApprovals().length}
                 </text>
                 <For each={afsApprovals().slice(0, 3)}>
                   {(item) => (
                     <text fg={palette.text}>{truncate(`${item.agent}: ${item.action}`, 36)}</text>
                   )}
                 </For>
-                <text fg={palette.muted}>resolve via afs approvals CLI</text>
+                <text fg={palette.muted}>review: afs approvals (human terminal)</text>
               </box>
             </Show>
           </Panel>
@@ -1171,7 +1159,7 @@ export function HalextTuiApp(props: HalextTuiAppProps) {
       </box>
 
       <box border={["top"]} borderColor={palette.border} paddingLeft={1} paddingRight={1} paddingTop={1} flexShrink={0}>
-        <text fg={errorText() ? palette.error : palette.muted}>{errorText() || statusText()}</text>
+        <text fg={errorText() ? palette.error : palette.muted}>{truncate(errorText() || statusText(), 512)}</text>
       </box>
     </box>
   )

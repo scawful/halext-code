@@ -1,6 +1,12 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test"
 import { join } from "node:path"
-import { run } from "../../src/cli/cmd/tui/routes/session/sidebar-afs-runner"
+import {
+  cleanupWindowsTargets,
+  run,
+  WINDOWS_TASKKILL_BATCH,
+  WINDOWS_TASKKILL_CONCURRENCY,
+  windowsDescendants,
+} from "../../src/cli/cmd/tui/routes/session/sidebar-afs-runner"
 import { tmpdir } from "../fixture/fixture"
 
 setDefaultTimeout(120_000)
@@ -43,6 +49,42 @@ async function raceWithDeadline<T>(pending: Promise<T>, timeout: number, deadlin
 }
 
 describe("sidebar AFS runner", () => {
+  test("captures the full Windows descendant tree", () => {
+    expect(
+      windowsDescendants(
+        [
+          { pid: 10, ppid: 1 },
+          { pid: 20, ppid: 10 },
+          { pid: 30, ppid: 20 },
+          { pid: 40, ppid: 99 },
+        ],
+        1,
+      ),
+    ).toEqual([10, 20, 30])
+  })
+
+  test("attempts every bounded Windows target in capped batches", async () => {
+    const targets = Array.from({ length: 1_023 }, (_, index) => index + 1)
+    const seen: number[] = []
+    let active = 0
+    let maxActive = 0
+    let launches = 0
+    const result = await cleanupWindowsTargets(targets, async (pids) => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      launches += 1
+      await Bun.sleep(1)
+      seen.push(...pids)
+      active -= 1
+      return true
+    })
+
+    expect(result).toBe("descendants")
+    expect(seen.toSorted((left, right) => left - right)).toEqual(targets)
+    expect(launches).toBe(Math.ceil(targets.length / WINDOWS_TASKKILL_BATCH))
+    expect(maxActive).toBeLessThanOrEqual(WINDOWS_TASKKILL_CONCURRENCY)
+  })
+
   test("captures successful output without a shell", async () => {
     const result = await run(["git", "--version"], {
       signal: new AbortController().signal,

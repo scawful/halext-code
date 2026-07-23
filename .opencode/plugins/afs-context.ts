@@ -77,6 +77,7 @@ const SYSTEM_GUIDANCE = [
   "Do not assume context.diff, context.freshness, task.*, handoff revision/lifecycle, message subscription/cleanup, memory.*, work.*, repair, or session.pack MCP tools are exposed in normal hcode sessions.",
   "The /afs-* commands remain convenient wrappers, but their public vocabulary should map to the plain AFS CLI rather than exposing internal storage terms.",
   "Durable missions, approvals, schemas, optimization decisions, and reviewed learning are CLI-backed via /afs-missions, /afs-approvals, /afs-schema, /afs-optimize, and /afs-insights. Keep Insights project-scoped; embeddings and internet are separate explicit choices; internet requires an installed extension provider plus allowed domains; only a human may confirm candidate promotion.",
+  "Keep /afs-approvals and /afs-missions read-only inside hcode. Render guarded approval and mission writes as exact commands for the human's controlling terminal; never execute them as the agent.",
   "Prefer visible AFS role agents sparingly: @afs-context for context lookup, @afs-planner for plans, @afs-reviewer for findings, @afs-worker for execution, and @critic for a strict second pass.",
   "Specialized exact-name agents exist for advanced flows, but normal agents should prefer slash commands over browsing a larger AFS catalog.",
   "Worker-style agents may read or write files in the current AFS-resolved project scope, but should keep default writes in scratchpad and use named CLI flows for durable state.",

@@ -1,8 +1,9 @@
 ---
-description: list, inspect, or update durable AFS missions across sessions
+description: inspect durable AFS missions and prepare human terminal writes
 ---
 
-Work with durable AFS missions for this workspace.
+Inspect durable AFS missions for this workspace. This command is read-only
+inside hcode.
 
 Request: `$ARGUMENTS`
 
@@ -18,9 +19,9 @@ Rules:
 
   `"${AFS_BIN:-${AFS_CLI:-afs}}" missions show --path . <mission-id>`
 
-- Create a mission only for work that outlives this session and has a clear
-  owner and next step. Ask for the owner if the request did not name one, then
-  include it explicitly:
+- When the human wants to create a mission for work that outlives this session,
+  gather a clear owner and next step, then prepare this command for the human
+  to run in their controlling terminal. Do not execute it from the agent:
 
   `"${AFS_BIN:-${AFS_CLI:-afs}}" missions create --path . --title "..." --summary "..." --owner "<owner>" --next-step "..." --json`
 
@@ -30,13 +31,20 @@ Rules:
   when it was not already supplied, then pass it as `--acceptance "..."`.
   Acceptance is human-authored: never invent, infer, or rewrite it.
 
-- Update status or next steps when a session materially advances or blocks a
-  mission (`status`: active, blocked, done, abandoned):
+- For a requested status or next-step update (`status`: active, blocked, done,
+  abandoned), prepare the exact command for the human terminal. Do not execute
+  it from the agent:
 
   `"${AFS_BIN:-${AFS_CLI:-afs}}" missions update --path . <mission-id> ... --json`
+
+- Return fully expanded, safely quoted create/update commands and say plainly:
+  `Run this in your terminal to confirm the mission write.` AFS may require the
+  human's controlling terminal, especially for acceptance-bearing writes.
+  Never claim the write succeeded until a later read-only `missions show` or
+  `missions list` proves it.
 
 - Do not create a mission for one-shot tasks; `afs jobs` covers those.
 - Do not assume a `missions.*` MCP tool exists; this flow is CLI-only.
 
-Return: active missions with status and next step, plus any mission you
-created or updated and why.
+Return: active missions with status and next step, plus any exact human
+terminal command requested for a create or update.

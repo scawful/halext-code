@@ -3,7 +3,18 @@ import { spawn } from "node:child_process"
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { BridgeApp, DEFAULT_BRIDGE_HOST, approvalArgs, runAfsJson, shutdownAfsProcesses, terminate } from "./server"
+import {
+  BridgeApp,
+  DEFAULT_BRIDGE_HOST,
+  approvalArgs,
+  cleanupWindowsTargets,
+  runAfsJson,
+  shutdownAfsProcesses,
+  terminate,
+  WINDOWS_TASKKILL_BATCH,
+  WINDOWS_TASKKILL_CONCURRENCY,
+  windowsDescendants,
+} from "./server"
 
 const originalCli = process.env.AFS_CLI
 const originalBin = process.env.AFS_BIN
@@ -74,6 +85,44 @@ afterEach(async () => {
   delete process.env.FAKE_PID_PATH
   await Promise.all(paths.splice(0).map((path) => rm(path, { recursive: true, force: true })))
 }, 60_000)
+
+describe("Windows process cleanup", () => {
+  test("captures the full descendant tree", () => {
+    expect(
+      windowsDescendants(
+        [
+          { pid: 10, ppid: 1 },
+          { pid: 20, ppid: 10 },
+          { pid: 30, ppid: 20 },
+          { pid: 40, ppid: 99 },
+        ],
+        1,
+      ),
+    ).toEqual([10, 20, 30])
+  })
+
+  test("attempts every bounded target in capped taskkill batches", async () => {
+    const targets = Array.from({ length: 1_023 }, (_, index) => index + 1)
+    const seen: number[] = []
+    let active = 0
+    let maxActive = 0
+    let launches = 0
+    const result = await cleanupWindowsTargets(targets, async (pids) => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      launches += 1
+      await Bun.sleep(1)
+      seen.push(...pids)
+      active -= 1
+      return true
+    })
+
+    expect(result).toBe("descendants")
+    expect(seen.toSorted((left, right) => left - right)).toEqual(targets)
+    expect(launches).toBe(Math.ceil(targets.length / WINDOWS_TASKKILL_BATCH))
+    expect(maxActive).toBeLessThanOrEqual(WINDOWS_TASKKILL_CONCURRENCY)
+  })
+})
 
 describe("approval routing", () => {
   test("uses history whenever completed requests may be returned", () => {

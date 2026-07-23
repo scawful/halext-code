@@ -20,6 +20,8 @@ export type Project = {
 
 export const BYTES = 256_000
 export const COUNT = 99
+export const MISSION_TITLE_LIMIT = 160
+const CONTROL = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u
 
 export type Snapshot = {
   dir: string
@@ -33,6 +35,33 @@ export type Snapshot = {
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+export function safeDisplayText(value: string, max = MISSION_TITLE_LIMIT) {
+  if (max < 2) return ""
+  const output: string[] = []
+  let size = 0
+  let truncated = false
+  for (const char of Array.from(value)) {
+    const point = char.codePointAt(0)!
+    const token = CONTROL.test(char)
+      ? point <= 0xffff
+        ? `\\u${point.toString(16).padStart(4, "0")}`
+        : `\\u{${point.toString(16)}}`
+      : char
+    const width = Array.from(token).length
+    if (size + width > max) {
+      truncated = true
+      break
+    }
+    output.push(token)
+    size += width
+  }
+  if (!truncated) return output.join("")
+  while (output.length > 0 && size + 1 > max) {
+    size -= Array.from(output.pop()!).length
+  }
+  return `${output.join("")}…`
 }
 
 function mission(value: unknown): value is Mission {
@@ -68,6 +97,7 @@ export function missions(value: unknown) {
   return value
     .toSorted((left, right) => Number(right.status === "blocked") - Number(left.status === "blocked"))
     .slice(0, 3)
+    .map((item) => ({ ...item, title: safeDisplayText(item.title) }))
 }
 
 export function approvals(value: unknown) {
