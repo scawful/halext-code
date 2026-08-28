@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  SOURCE_DIR="$(cd -P -- "$(dirname -- "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$SOURCE_DIR/$SOURCE"
+done
+ROOT="${HALEXT_CODE_ROOT:-$(cd -P -- "$(dirname -- "$SOURCE")/.." && pwd)}"
+export OPENCODE_CONFIG_DIR="${OPENCODE_CONFIG_DIR:-$ROOT/.opencode}"
+
+if [[ -n "${OPENCODE_BIN:-}" ]]; then
+  exec "$OPENCODE_BIN" "$@"
+fi
+
+if command -v opencode >/dev/null 2>&1; then
+  exec opencode "$@"
+fi
+
+bun_bin="${BUN_BIN:-}"
+if [[ -z "$bun_bin" ]]; then
+  bun_bin="$(command -v bun || true)"
+fi
+if [[ -z "$bun_bin" ]]; then
+  printf '%s\n' "hcode: opencode and bun are unavailable; install one or set OPENCODE_BIN/BUN_BIN" >&2
+  exit 127
+fi
+
+# Use an absolute entrypoint without changing directories so OpenCode keeps the
+# caller's project as its active workspace while loading this fork's portable
+# project configuration through OPENCODE_CONFIG_DIR.
+exec "$bun_bin" run --conditions=browser "$ROOT/packages/opencode/src/index.ts" "$@"

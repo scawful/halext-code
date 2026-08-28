@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE="$SCRIPT_DIR/hcode"
+BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
+NAME="hcode"
+REPLACE=0
+DRY_RUN=0
+
+usage() {
+  cat <<EOF
+Usage: $0 [options]
+
+Options:
+  --bin-dir <path>  Destination directory (default: \$XDG_BIN_HOME or ~/.local/bin)
+  --name <name>      Installed command name (default: hcode)
+  --replace          Back up a different existing target before installing
+  --dry-run          Print the resolved plan without writing
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --bin-dir)
+      BIN_DIR="${2:?missing value for --bin-dir}"
+      shift 2
+      ;;
+    --name)
+      NAME="${2:?missing value for --name}"
+      shift 2
+      ;;
+    --replace)
+      REPLACE=1
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+case "$BIN_DIR" in
+  ~/*) BIN_DIR="$HOME/${BIN_DIR#~/}" ;;
+esac
+if [[ "$BIN_DIR" != /* ]]; then
+  BIN_DIR="$(pwd)/$BIN_DIR"
+fi
+if [[ ! "$NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "Invalid command name: $NAME" >&2
+  exit 1
+fi
+
+TARGET="$BIN_DIR/$NAME"
+if [ -L "$TARGET" ] && [ "$(readlink "$TARGET")" = "$SOURCE" ]; then
+  printf 'hcode is already installed: %s\n' "$TARGET"
+  exit 0
+fi
+if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
+  if [ "$REPLACE" -ne 1 ]; then
+    echo "Target already exists: $TARGET (use --replace to back it up)" >&2
+    exit 1
+  fi
+  BACKUP="${TARGET}.backup.$(date +%Y%m%d_%H%M%S)"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '[dry-run] mv %q %q\n' "$TARGET" "$BACKUP"
+  else
+    mv "$TARGET" "$BACKUP"
+  fi
+fi
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  printf '[dry-run] mkdir -p %q\n' "$BIN_DIR"
+  printf '[dry-run] ln -s %q %q\n' "$SOURCE" "$TARGET"
+  exit 0
+fi
+
+mkdir -p "$BIN_DIR"
+ln -s "$SOURCE" "$TARGET"
+printf 'Installed %s -> %s\n' "$TARGET" "$SOURCE"
+case ":$PATH:" in
+  *":$BIN_DIR:"*) ;;
+  *) printf 'Add %s to PATH to invoke %s globally.\n' "$BIN_DIR" "$NAME" ;;
+esac

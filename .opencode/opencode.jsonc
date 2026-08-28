@@ -12,7 +12,17 @@
       "description": "Contains opencode logs and data",
     },
   },
-  "mcp": {},
+  // AFS is resolved from PATH so this checkout does not encode one machine's
+  // source-tree layout. Override this entry in user config when AFS is exposed
+  // by another executable or transport.
+  "mcp": {
+    "afs": {
+      "type": "local",
+      "command": ["afs", "mcp", "serve"],
+      "enabled": true,
+      "timeout": 30000,
+    },
+  },
   "tools": {
     "github-triage": false,
     "github-pr-search": false,

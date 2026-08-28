@@ -112,6 +112,16 @@ This is used internally and can be invoked using `@general` in messages.
 
 Learn more about [agents](https://opencode.ai/docs/agents).
 
+### Portable AFS integration
+
+This fork adds a small, provider-neutral AFS context layer without changing
+OpenCode's core runtime or pinning a model. Install `afs` on `PATH`, then use
+`/afs` for context routing or the focused `/afs/status`, `/afs/verify`,
+`/afs/handoff`, and `/afs/repair` commands. See
+[the AFS integration guide](docs/afs-integration.md) for machine-local
+overrides, the portable `./scripts/hcode` launcher, and its safe
+`./scripts/install-hcode` installer.
+
 ### Documentation
 
 For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
